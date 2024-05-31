@@ -39,8 +39,6 @@ conda activate medmod
 pip install --upgrade pip  # enable PEP 660 support
 pip install -e .
 ```
-
-
 ### Upgrade to latest code base
 
 ```Shell
@@ -53,7 +51,7 @@ pip install -e .
 ```
 
 ## Model Weights
-Please check out our [Model Zoo](https://github.com/nyuad-cai/Multimodal-BenchMark/blob/main/docs/MODEL_ZOO.md) for all public LLaVA checkpoints, and the instructions of how to use the weights.
+Please check out our [Models](https://github.com/nyuad-cai/Multimodal-BenchMark/blob/main/docs/MODEL_ZOO.md) for all public MedMod checkpoints, and the instructions of how to use the weights.
 
 ## Demo
 
