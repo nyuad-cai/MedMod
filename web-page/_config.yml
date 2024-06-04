@@ -1,0 +1,11 @@
+title: MedMod
+description: Multimodal Benchmark for Medical Prediction Tasks with Electronic Health Records and Chest X-Ray Images
+show_downloads: true
+google_analytics:
+theme: jekyll-theme-cayman
+github:
+  repository_name: "MedMod"
+  repository_url: https://github.com/proximacentauri2024/MedMod
+  paper_url: https://nyuad.nyu.edu/en/research/faculty-labs-and-projects/clinical-artificial-intelligence-lab.html
+  owner_name: "Clinical AI Laboratory"
+  owner_url: https://clinicalailab.com/

@@ -1,0 +1,575 @@
+---
+layout: default
+---
+
+<h1 id="medmod">MedMod</h1>
+<p>Clinical practice involves the analysis of information from multiple sources to make informed decisions about the patient&#39;s state. Recently, multimodal machine learning has provided new opportunities to developing models that integrate multiple modalities, mimicking clinical practice. However, multimodal benchmarks involving routine modalities, specifically Electronic Health Records (EHR) and Chest X-ray images (CXR), are scarce. </p>
+<p>To help advance multimodal learning in tackling real-world prediction tasks, we present <strong>MedMod</strong> with the following contributions:</p>
+
+<ul>
+    <li>We propose a diverse and comprehensive multimodal clinical benchmark comprising six clinical prediction tasks using two publicly available datasets <a href="https://physionet.org/content/mimiciv/2.2/">MIMIC-IV</a> and <a href="https://physionet.org/content/mimic-cxr-jpg/2.1.0/">MIMIC-CXR</a>: prediction of clinical conditions, in-hospital mortality, decompensation, length of stay, readmission, and radiological findings. </li>
+    <li>We perform extensive evaluations of six supervised learning models, encompassing basic fusion paradigms (early, joint, late) and other sophisticated multimodal frameworks. </li>
+    <li>We also evaluate three state-of-the-art self-supervised learning methods and present a unified evaluation scheme and protocol for each task. </li>
+</ul>
+<h1 id="leaderboards">Leaderboards</h1>
+
+<div class="leaderboardcontainer">
+<a href="#supervisedModelsUnimodal" class="btn_update">Unimodal baselines</a>
+<br>
+<a href="#supervisedModelsMultimodal" class="btn_update">Multimodal baselines</a>
+<br>
+<a href="#selfSupervisedModelsLinearProbing" class="btn_update">Linear probing</a>
+<br>
+<a href="#selfSupervisedModelsFineTuning" class="btn_update">Fine-tuning</a>
+</div>
+
+<hr>
+<h2 style="text-align:center">Supervised models: Uni-modal baselines</h2>
+<table id="supervisedModelsUnimodal" class="display dt-head-right">
+    <thead>
+        <tr>
+            <th rowspan="2" width="15%">Method</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">In-hospital mortality</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Clinical conditions</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Decompensation</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Length of stay</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Radiology</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Readmission</th>
+        </tr>
+        <tr>
+            <!-- Mortality -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+            
+            <!-- Clinical conditions -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Decompensation -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Length of stay -->
+            <th>KAPPA</th>
+            <th>MAD</th>
+
+            <!-- Radiology -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Readmission -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Unimodal EHR</td>
+            <!-- Mortality -->
+            <td>98</td>
+            <td>45</td>
+
+            <!-- Clinical conditions -->
+            <td>90</td>
+            <td>60</td>
+
+            <!-- Decompensation -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Length of stay -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Radiology -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Readmission -->
+            <td>80</td>
+            <td>70</td>
+        </tr>
+
+        <tr>
+            <td>Unimodal CXR</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 style="text-align:center">Supervised models: Multimodal baselines</h2>
+<table id="supervisedModelsMultimodal" class="display dt-head-right">
+    <thead>
+        <tr>
+            <th rowspan="2" width="15%">Method</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">In-hospital mortality</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Clinical conditions</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Decompensation</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Length of stay</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Radiology</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Readmission</th>
+        </tr>
+        <tr>
+            <!-- Mortality -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+            
+            <!-- Clinical conditions -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Decompensation -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Length of stay -->
+            <th>KAPPA</th>
+            <th>MAD</th>
+
+            <!-- Radiology -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Readmission -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Early fusion (concatenate)</td>
+            <!-- Mortality -->
+            <td>98</td>
+            <td>45</td>
+
+            <!-- Clinical conditions -->
+            <td>90</td>
+            <td>60</td>
+
+            <!-- Decompensation -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Length of stay -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Radiology -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Readmission -->
+            <td>80</td>
+            <td>70</td>
+        </tr>
+
+        <tr>
+            <td>Joint fusion (concatenate)</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+
+        <tr>
+            <td>Late fusion (PT/frozen)</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+
+        
+    </tbody>
+</table>
+
+<h2 style="text-align:center">Self-supervised models: Linear probing</h2>
+<table id="selfSupervisedModelsLinearProbing" class="display dt-head-right">
+    <thead>
+        <tr>
+            <th rowspan="2" width="15%">Method</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">In-hospital mortality</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Clinical conditions</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Decompensation</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Length of stay</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Radiology</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Readmission</th>
+        </tr>
+        <tr>
+            <!-- Mortality -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+            
+            <!-- Clinical conditions -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Decompensation -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Length of stay -->
+            <th>KAPPA</th>
+            <th>MAD</th>
+
+            <!-- Radiology -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Readmission -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Random (RI + frozen MedFuse)</td>
+            <!-- Mortality -->
+            <td>98</td>
+            <td>45</td>
+
+            <!-- Clinical conditions -->
+            <td>90</td>
+            <td>60</td>
+
+            <!-- Decompensation -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Length of stay -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Radiology -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Readmission -->
+            <td>80</td>
+            <td>70</td>
+        </tr>
+
+        <tr>
+            <td>ConVIRT</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+
+        <tr>
+            <td>VICReg</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+
+        <tr>
+            <td>ALIGN</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2 style="text-align:center">Self-supervised models: Fine-tuning</h2>
+<table id="selfSupervisedModelsFineTuning" class="display dt-head-right">
+    <thead>
+        <tr>
+            <th rowspan="2" width="15%">Method</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">In-hospital mortality</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Clinical conditions</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Decompensation</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Length of stay</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Radiology</th>
+            <th colspan="2" text-align="center" data-dt-order="disable">Readmission</th>
+        </tr>
+        <tr>
+            <!-- Mortality -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+            
+            <!-- Clinical conditions -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Decompensation -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Length of stay -->
+            <th>KAPPA</th>
+            <th>MAD</th>
+
+            <!-- Radiology -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+
+            <!-- Readmission -->
+            <th>AUROC</th>
+            <th>AUPRC</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Random (RI + frozen MedFuse)</td>
+            <!-- Mortality -->
+            <td>98</td>
+            <td>45</td>
+
+            <!-- Clinical conditions -->
+            <td>90</td>
+            <td>60</td>
+
+            <!-- Decompensation -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Length of stay -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Radiology -->
+            <td>80</td>
+            <td>70</td>
+
+            <!-- Readmission -->
+            <td>80</td>
+            <td>70</td>
+        </tr>
+
+        <tr>
+            <td>ConVIRT</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+
+        <tr>
+            <td>VICReg</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+
+        <tr>
+            <td>ALIGN</td>
+            <!-- Mortality -->
+            <td>99</td>
+            <td>44</td>
+
+            <!-- Clinical conditions -->
+            <td>88</td>
+            <td>66</td>
+
+            <!-- Decompensation -->
+            <td>77</td>
+            <td>44</td>
+
+            <!-- Length of stay -->
+            <td>55</td>
+            <td>67</td>
+
+            <!-- Radiology -->
+            <td>92</td>
+            <td>73</td>
+
+            <!-- Readmission -->
+            <td>21</td>
+            <td>74</td>
+        </tr>
+    </tbody>
+</table>
+
+<script>
+
+$(document).ready( function () {
+    $('#supervisedModelsUnimodal').DataTable();
+} );
+
+$(document).ready( function () {
+    $('#supervisedModelsMultimodal').DataTable();
+} );
+
+$(document).ready( function () {
+    $('#selfSupervisedModelsLinearProbing').DataTable();
+} );
+
+$(document).ready( function () {
+    $('#selfSupervisedModelsFineTuning').DataTable();
+} );
+</script>
+
+<hr>
+<a href="https://forms.gle/VapUvQMZ8hsADUWA8" class="btn_update">Submit new results</a>
+
+<h1 id="citation">Citation</h1>
+<p>If you find MedMod useful for your research and applications, please cite using this BibTeX:</p>
+<pre><code class="lang-bibtex">@misc{author2024medmod,
+    <span class="hljs-attr">title={MedMod:</span> A Multimodal Benchmark for Clinical Prediction Tasks <span class="hljs-keyword">with</span> Electronic Health Records <span class="hljs-literal">and</span> Chest X-Ray Images},
+    <span class="hljs-attr">url={https://github.com/proximacentauri2024/Multimodal-BenchMark},</span>
+    <span class="hljs-attr">author={Authors</span>},
+    <span class="hljs-attr">month={June},</span>
+    <span class="hljs-attr">year={2024}</span>
+}
+</code></pre>

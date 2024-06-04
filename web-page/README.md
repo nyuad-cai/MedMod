@@ -1,0 +1,1 @@
+# MedMod: Multimodal Benchmark for Medical Prediction Tasks with Electronic Health Records and Chest X-Ray Images
