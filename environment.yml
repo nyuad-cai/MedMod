@@ -1,4 +1,4 @@
-name: mml-ssl
+name: MedMod
 channels:
   - pytorch
   - nvidia
@@ -258,4 +258,4 @@ dependencies:
       - typeshed-client==2.1.0
       - warmup-scheduler==0.3
       - yarl==1.7.2
-prefix: /home/se1525/.conda/envs/mml-ssl
+

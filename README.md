@@ -1,6 +1,6 @@
 # 🩻 MedMod: A Multimodal Benchmark for Clinical Prediction Tasks with Electronic Health Records and Chest X-Ray Images
 
-*Clinical prediction with multimodal learning using Electronic Health Records and Chest X-Ray images *
+*Clinical prediction with multimodal learning using Electronic Health Records and Chest X-Ray images*
 
 **MedMod: A Multimodal Benchmark for Clinical Prediction Tasks with Electronic Health Records and Chest X-Ray Image** (NeurIPS 2024 Datasets and Benchmarks Track, **Paper**) [[Paper](https://clinicalailab.com/)]  <br>
 
