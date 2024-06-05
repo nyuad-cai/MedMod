@@ -1,0 +1,287 @@
+
+import os
+import torch
+import random
+import numpy as np
+import pandas as pd 
+
+from PIL import Image
+from torch.utils.data import Dataset
+from data.utils import R_CLASSES, CLASSES
+
+
+# CXR datset
+class MIMICCXR(Dataset):
+    def __init__(self, paths, args, transform=None, split='train'):
+        self.data_dir = args.cxr_data_root
+        self.args = args
+        self.CLASSES  = R_CLASSES
+        self.filenames_to_path = {path.split('/')[-1].split('.')[0]: path for path in paths}
+
+        metadata = pd.read_csv(f'{self.data_dir}/mimic-cxr-2.0.0-metadata.csv')
+        labels = pd.read_csv(f'{self.data_dir}/mimic-cxr-2.0.0-chexpert.csv')
+        labels[self.CLASSES] = labels[self.CLASSES].fillna(0)
+        labels = labels.replace(-1.0, 0.0)
+        
+        splits = pd.read_csv(f'{self.data_dir}/mimic-cxr-ehr-split.csv')
+
+
+        metadata_with_labels = metadata.merge(labels[self.CLASSES+['study_id'] ], how='inner', on='study_id')
+
+
+        self.filesnames_to_labels = dict(zip(metadata_with_labels['dicom_id'].values, metadata_with_labels[self.CLASSES].values))
+        self.filenames_loaded = splits.loc[splits.split==split]['dicom_id'].values
+        self.transform = transform
+        self.filenames_loaded = [filename  for filename in self.filenames_loaded if filename in self.filesnames_to_labels]
+
+    def __getitem__(self, index):
+        if isinstance(index, str):
+            img = Image.open(self.filenames_to_path[index]).convert('RGB')
+            labels = torch.tensor(self.filesnames_to_labels[index]).float()
+            if self.transform is not None:
+                img = self.transform(img)
+            return img, labels
+          
+        
+        filename = self.filenames_loaded[index]
+        img = Image.open(self.filenames_to_path[filename]).convert('RGB')
+        labels = torch.tensor(self.filesnames_to_labels[filename]).float()
+
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, labels
+    
+    def __len__(self):
+        return len(self.filenames_loaded)
+
+
+############################################################################
+# EHR dataset
+
+class EHRdataset(Dataset):
+    def __init__(self, args, discretizer, normalizer, listfile, dataset_dir, return_names=True, period_length=48.0, transforms=None):
+        self.return_names = return_names
+        self.discretizer = discretizer
+        self.normalizer = normalizer
+        self._period_length = period_length
+        self.args=args
+
+        self._dataset_dir = dataset_dir
+        listfile_path = listfile
+        with open(listfile_path, "r") as lfile:
+            self._data = lfile.readlines()
+        self._listfile_header = self._data[0]
+        self.CLASSES = self._listfile_header.strip().split(',')[3:]
+        self._data = self._data[1:]
+        self.transforms = transforms
+
+        self._data = [line.split(',') for line in self._data]
+        if self.args.task=='length-of-stay' or self.args.task=='decompensation':
+            self.data_map = {
+                (mas[0],float(mas[1])): {
+                    'labels': list(map(float, mas[3:])),
+                    'stay_id': float(mas[2]),
+                    'time': float(mas[1]),
+                    }
+                for mas in self._data
+                    
+                }
+        else:
+            self.data_map = {
+                mas[0]: {
+                    'labels': list(map(float, mas[3:])),
+                    'stay_id': float(mas[2]),
+                    'time': float(mas[1]),
+                    }
+                for mas in self._data
+            }
+
+        self.names = list(self.data_map.keys())
+        self.times= None
+    
+    def _read_timeseries(self, ts_filename, lower_bound, upper_bound):
+        
+        ret = []
+        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
+            header = tsfile.readline().strip().split(',')
+            assert header[0] == "Hours"
+            for line in tsfile:
+                mas = line.strip().split(',')
+                t = float(mas[0])
+                if t < lower_bound:
+                    continue
+                elif (t> lower_bound) & (t <upper_bound) :
+                    ret.append(np.array(mas))
+                elif t > upper_bound:
+                    break
+        try:
+            # print("Hour", upper_bound)
+            # print("EHR data", np.stack(ret))
+            return (np.stack(ret), header)
+        except ValueError:
+            print("exception in read_timeseries")
+            ret = ([['0.11666666666666667', '', '', '', '', '', '', '', '', '109', '',
+                     '', '', '30', '', '', '', ''],
+                    ['0.16666666666666666', '', '61.0', '', '', '', '', '', '', '109',
+                    '', '64', '97.0', '29', '74.0', '', '', '']])
+            # print(ts_filename, lower_bound, upper_bound)
+            return (np.stack(ret), header)
+    
+    def read_by_file_name(self, index, time, lower_bound, upper_bound):
+        if self.args.task=='length-of-stay' or self.args.task=='decompensation':
+            t = self.data_map[(index,time)]['time'] 
+            y = self.data_map[(index,time)]['labels']
+            stay_id = self.data_map[(index,time)]['stay_id']
+            (X, header) = self._read_timeseries(index, lower_bound=lower_bound, upper_bound=time)
+        else:
+            t = self.data_map[index]['time'] 
+            y = self.data_map[index]['labels']
+            stay_id = self.data_map[index]['stay_id']
+            (X, header) = self._read_timeseries(index, lower_bound=lower_bound, upper_bound=upper_bound)
+
+        return {"X": X,
+                "t": t,
+                "y": y,
+                'stay_id': stay_id,
+                "header": header,
+                "name": index}
+
+    def __getitem__(self, item_args, lower, upper):
+        if self.args.task=='length-of-stay' or self.args.task=='decompensation':
+            time = item_args[1]
+            index = item_args[0]
+        else:
+            index = item_args
+            if isinstance(index, int):
+                index = self.names[index]
+            time = None
+        ret = self.read_by_file_name(index, time, lower, upper)
+        data = ret["X"]
+        ts = data.shape[0]
+        # print("Times included", ts) #ret["t"] if ret['t'] > 0.0 else self._period_length
+        ys = ret["y"]
+        names = ret["name"]
+
+        ## Added block
+        if self.transforms is not None:
+            data = self.transforms(data)
+            
+            for i in range(len(data)):
+                data[i] = self.discretizer.transform(data[i], end=ts)[0] 
+                if 'gaussian' in self.transforms.augmentation and i != 0:
+                    data[i] = self.transforms.gaussian_blur(data[i])
+                if 'sampling' in self.transforms.augmentation and i != 0: #carry last value forward 
+                    data[i] = self.transforms.downsample(data[i])
+                if (self.normalizer is not None):
+                    data[i] = self.normalizer.transform(data[i])
+        else:
+            data = self.discretizer.transform(data, end=ts)[0]
+            if (self.normalizer is not None):
+                data = self.normalizer.transform(data)
+        #########  
+        
+        if 'length-of-stay' in self._dataset_dir:
+            ys = np.array(ys, dtype=np.float32) if len(ys) > 1 else np.array(ys, dtype=np.float32)[0]
+        else:
+            ys = np.array(ys, dtype=np.int32) if len(ys) > 1 else np.array(ys, dtype=np.int32)[0]
+        return data, ys
+
+    
+    def __len__(self):
+        return len(self.names)
+    
+
+
+############################################################################
+# Fusion dataset
+
+class MIMIC_CXR_EHR(Dataset):
+    def __init__(self, args, metadata_with_labels, ehr_ds, cxr_ds, split='train'):
+        
+        if 'radiology' in args.labels_set:
+            self.CLASSES = R_CLASSES
+        else:
+            self.CLASSES = CLASSES
+        
+        self.metadata_with_labels = metadata_with_labels
+        self.cxr_files_paired = self.metadata_with_labels.dicom_id.values
+        self.ehr_files_paired = (self.metadata_with_labels['stay'].values)
+        self.time_diff = self.metadata_with_labels.time_diff
+        self.lower = self.metadata_with_labels.lower
+        self.upper = self.metadata_with_labels.upper
+        self.cxr_files_all = cxr_ds.filenames_loaded
+        self.ehr_files_all = ehr_ds.names
+        
+        self.ehr_files_unpaired = list(set(self.ehr_files_all) - set(self.ehr_files_paired))
+        
+        self.ehr_ds = ehr_ds
+        self.cxr_ds = cxr_ds
+
+        if args.task == 'decompensation' or args.task == 'length-of-stay':
+            self.paired_times= (self.metadata_with_labels['period_length'].values)
+            self.ehr_paired_list = list(zip(self.ehr_files_paired, self.paired_times))
+        
+        self.args = args
+        self.split = split        
+
+    def __getitem__(self, index):
+        if self.args.data_pairs == 'paired':
+            cxr_data, labels_cxr = self.cxr_ds[self.cxr_files_paired[index]]
+            lower = self.metadata_with_labels.iloc[index].lower
+            upper = self.metadata_with_labels.iloc[index].upper
+            if self.args.task == 'decompensation' or self.args.task == 'length-of-stay':
+                ehr_data, labels_ehr = self.ehr_ds.__getitem__(self.ehr_paired_list[index], lower, upper)
+                # ehr_data, labels_ehr = self.ehr_ds[self.ehr_paired_list[index]]
+            else:
+                ehr_data, labels_ehr = self.ehr_ds.__getitem__(self.ehr_files_paired[index],lower,upper)
+                # ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_paired[index]]
+            time_diff = self.metadata_with_labels.iloc[index].time_diff
+                        
+            if self.args.beta_infonce:
+                return ehr_data, cxr_data, labels_ehr, labels_cxr, time_diff
+            else:
+                return ehr_data, cxr_data, labels_ehr, labels_cxr
+        
+        elif self.args.data_pairs == 'radiology':
+            ehr_data, labels_ehr = np.zeros((1, 10)), np.zeros(self.args.num_classes)
+            cxr_data, labels_cxr = self.cxr_ds[self.cxr_files_all[index]]
+            return ehr_data, cxr_data, labels_ehr, labels_cxr
+        
+        elif self.args.data_pairs == 'ehr_only':
+            ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_all[index]]
+            cxr_data, labels_cxr = None, None
+            return ehr_data, cxr_data, labels_ehr, labels_cxr
+        
+        elif self.args.data_pairs == 'joint_ehr':
+            if index < len(self.ehr_files_paired):
+                ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_paired[index]]
+                cxr_data, labels_cxr = self.cxr_ds[self.cxr_files_paired[index]]
+            else:
+                index = random.randint(0, len(self.ehr_files_unpaired)-1) 
+                if self.args.task == 'decompensation' or self.args.task == 'length-of-stay':
+                    ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_paired[index]]
+                else:
+                    ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_paired[index]]
+                cxr_data, labels_cxr = None, None
+            return ehr_data, cxr_data, labels_ehr, labels_cxr
+
+       
+    
+    def __len__(self):
+        if self.args.data_pairs == 'paired':
+            return len(self.ehr_files_paired)
+        elif self.args.data_pairs == 'ehr_only':
+            return len(self.ehr_files_all)
+        elif self.args.data_pairs == 'radiology':
+            return len(self.cxr_files_all)
+        elif self.args.data_pairs == 'joint_ehr':
+            return len(self.ehr_files_paired) + int(self.data_ratio * len(self.ehr_files_unpaired))
+
+
+
+
+
+
+
+
+
