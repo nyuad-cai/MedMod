@@ -4,9 +4,10 @@
 
 ### Release
 
-- [06/05] 🩻 **MedMod** (Initial) models and clinical tasks are released, [[Code](https://github.com/proximacentauri2024/Multimodal-BenchMark/)] 
+- [06/05] 🩻 **MedMod** (Initial) models and clinical tasks are released
+<!-- , [[Code](https://github.com/proximacentauri2024/Multimodal-BenchMark/)]  -->
 
-- [2024/06/05] **MedMod** is submitted to NeurIPS 2024 Datasets and Benchmarks Track as **workshop paper**.
+- [2024/06/05] **MedMod** is submitted to NeurIPS 2024 Datasets and Benchmarks Track as*.
 
 Table of contents
 =================
