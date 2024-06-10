@@ -296,10 +296,9 @@ CLASSES = [
 
 
 
-def get_metadata(args):
+def get_all_metadata(args):
 
-    data_dir = args.cxr_data_root
-    cxr_metadata = pd.read_csv(f'{data_dir}/mimic-cxr-2.0.0-metadata.csv')
+    cxr_metadata = pd.read_csv(f'{args.cxr_data_root}/mimic-cxr-2.0.0-metadata.csv')
     icu_stay_metadata = pd.read_csv(f'{args.ehr_data_root}/root/all_stays.csv')
     columns = ['subject_id', 'stay_id', 'intime', 'outtime']
     
@@ -340,7 +339,7 @@ def get_all_cxr(cxr_merged_icustays_AP):
 
 def load_decompensation_meta(args):
     
-    cxr_merged_icustays = get_metadata(args)
+    cxr_merged_icustays = get_all_metadata(args)
     train_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/train_listfile.csv')
     train_listfile = train_listfile
     val_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/val_listfile.csv')
@@ -365,7 +364,7 @@ def load_decompensation_meta(args):
     
 def load_los_meta(args):
 
-    cxr_merged_icustays = get_metadata(args)
+    cxr_merged_icustays = get_all_metadata(args)
     train_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/train_listfile.csv')
     train_listfile = train_listfile
     val_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/val_listfile.csv')
@@ -392,7 +391,7 @@ def load_los_meta(args):
     return groups
 
 def load_mortality_meta(args):
-    cxr_merged_icustays = get_metadata(args)
+    cxr_merged_icustays = get_all_metadata(args)
     end_time = cxr_merged_icustays.intime + pd.DateOffset(hours=48)
     cxr_merged_icustays_during = cxr_merged_icustays.loc[(cxr_merged_icustays.StudyDateTime>=cxr_merged_icustays.intime)&\
                                                          ((cxr_merged_icustays.StudyDateTime<=end_time))]
@@ -403,7 +402,7 @@ def load_mortality_meta(args):
 
 
 def load_phenotyping_meta(args):
-    cxr_merged_icustays = get_metadata(args)
+    cxr_merged_icustays = get_all_metadata(args)
     end_time = cxr_merged_icustays.outtime
     cxr_merged_icustays_during = cxr_merged_icustays.loc[(cxr_merged_icustays.StudyDateTime>=cxr_merged_icustays.intime)&\
                                                          ((cxr_merged_icustays.StudyDateTime<=end_time))]
@@ -413,7 +412,7 @@ def load_phenotyping_meta(args):
     return groups
 
 def load_readmission_meta(args):
-    cxr_merged_icustays = get_metadata(args)
+    cxr_merged_icustays = get_all_metadata(args)
     end_time = cxr_merged_icustays.outtime
     cxr_merged_icustays_during = cxr_merged_icustays.loc[(cxr_merged_icustays.StudyDateTime>=cxr_merged_icustays.intime)&\
                                                          ((cxr_merged_icustays.StudyDateTime<=end_time))]
@@ -423,7 +422,7 @@ def load_readmission_meta(args):
     return groups
 
 def load_radiology_meta(args):
-    cxr_merged_icustays = get_metadata(args)
+    cxr_merged_icustays = get_all_metadata(args)
     end_time = cxr_merged_icustays.outtime
     cxr_merged_icustays_during = cxr_merged_icustays.loc[(cxr_merged_icustays.StudyDateTime>=cxr_merged_icustays.intime)&\
                                                         ((cxr_merged_icustays.StudyDateTime<=end_time))]
@@ -432,28 +431,50 @@ def load_radiology_meta(args):
 
     return groups
 
-def get_pretraining_meta(args):
-    cxr_merged_icustays = get_metadata(args)
+def load_pretraining_meta(args):
+    cxr_merged_icustays = get_all_metadata(args)
     cxr_merged_icustays_AP = cxr_merged_icustays[cxr_merged_icustays['ViewPosition'] == 'AP']
     groups = cxr_merged_icustays_AP
     return groups
-    
 
-def load_cxr_ehr(args, ehr_train_ds, ehr_val_ds, cxr_train_ds, cxr_val_ds, ehr_test_ds, cxr_test_ds):
-    
-    # Load cxr and ehr groups
-    cxr_merged_icustays = loadmetadata(args) 
-    
+load_task_meta = {'decompensation':load_decompensation_meta,
+                  'los':load_los_meta,
+                  'phenotyping':load_phenotyping_meta,
+                  'mortality':load_mortality_meta,
+                  'readmission':load_readmission_meta,
+                  'radiology':load_radiology_meta,
+                  'pretraining':load_pretraining_meta}
+
+
+def count_labels(dataset):
+    total_labels_count = 0
+    for key, value in dataset.ehr_ds.data_map.items():
+        # Access the labels for each key
+        labels = value['labels']
+        # Now you can work with the labels, for example, counting positive labels
+        for label in labels:
+            if label == 1:  # Assuming 1 indicates a positive label
+                total_labels_count += 1 
+    return total_labels_count
+
+
+
+
+def get_final_meta(args):
+
+        # Load cxr and ehr groups
+    cxr_merged_icustays = load_task_meta[args.task](args) 
+
     # Add the labels 
     splits_labels_train = pd.read_csv(f'{args.ehr_data_root}/{args.task}/train_listfile.csv')
     splits_labels_val = pd.read_csv(f'{args.ehr_data_root}/{args.task}/val_listfile.csv')
     splits_labels_test = pd.read_csv(f'{args.ehr_data_root}/{args.task}/test_listfile.csv')
-    
+
     #TODO: investigate why total size of cxr_merged_icustays drops after the three steps below
     train_meta_with_labels = cxr_merged_icustays.merge(splits_labels_train, how='inner', on='stay_id')#change dataset size here
     val_meta_with_labels = cxr_merged_icustays.merge(splits_labels_val, how='inner', on='stay_id')
     test_meta_with_labels = cxr_merged_icustays.merge(splits_labels_test, how='inner', on='stay_id')
-    
+
     # Get rid of chest X-rays that don't have radiology reports
     metadata = pd.read_csv(f'{args.cxr_data_root}/mimic-cxr-2.0.0-metadata.csv')
     labels = pd.read_csv(f'{args.cxr_data_root}/mimic-cxr-2.0.0-chexpert.csv')
@@ -461,51 +482,39 @@ def load_cxr_ehr(args, ehr_train_ds, ehr_val_ds, cxr_train_ds, cxr_val_ds, ehr_t
     train_meta_with_labels = train_meta_with_labels.merge(metadata_with_labels[['dicom_id']], how='inner', on='dicom_id')
     val_meta_with_labels = val_meta_with_labels.merge(metadata_with_labels[['dicom_id']], how='inner', on='dicom_id')
     test_meta_with_labels = test_meta_with_labels.merge(metadata_with_labels[['dicom_id']], how='inner', on='dicom_id')
-    
 
+    return train_meta_with_labels, val_meta_with_labels, test_meta_with_labels
+
+
+
+def load_cxr_ehr(args, 
+                 ehr_train_ds, 
+                 ehr_val_ds, 
+                 cxr_train_ds, 
+                 cxr_val_ds, 
+                 ehr_test_ds, 
+                 cxr_test_ds):
+
+    train_meta_with_labels, val_meta_with_labels, test_meta_with_labels = get_final_meta(args) 
 
     # Multimodal class
     train_ds = MIMIC_CXR_EHR(args, train_meta_with_labels, ehr_train_ds, cxr_train_ds)
-    # Iterate over keys in the data map
-    total_labels_count = 0
-    for key, value in train_ds.ehr_ds.data_map.items():
-        # Access the labels for each key
-        labels = value['labels']
-        # Now you can work with the labels, for example, counting positive labels
-        for label in labels:
-            if label == 1:  # Assuming 1 indicates a positive label
-                total_labels_count += 1
-
+    # total_labels_count = count_labels(train_ds) # this does nothing
 
     val_ds = MIMIC_CXR_EHR(args, val_meta_with_labels, ehr_val_ds, cxr_val_ds, split='val')
-
-    total_labels_count = 0
-    for key, value in val_ds.ehr_ds.data_map.items():
-        # Access the labels for each key
-        labels = value['labels']
-        # Now you can work with the labels, for example, counting positive labels
-        for label in labels:
-            if label == 1:  # Assuming 1 indicates a positive label
-                total_labels_count += 1
+    # total_labels_count = count_labels(val_ds) # this does nothing
 
     test_ds = MIMIC_CXR_EHR(args, test_meta_with_labels, ehr_test_ds, cxr_test_ds, split='test')
-
-    total_labels_count = 0
-    for key, value in test_ds.ehr_ds.data_map.items():
-        # Access the labels for each key
-        labels = value['labels']
-        # Now you can work with the labels, for example, counting positive labels
-        for label in labels:
-            if label == 1:  # Assuming 1 indicates a positive label
-                total_labels_count += 1
-
-    
+    # total_labels_count = count_labels(test_ds) # this does nothing
 
     collate = my_collate_fusion
     train_dl = DataLoader(train_ds, args.batch_size, shuffle=True, collate_fn=collate, drop_last=True) 
     val_dl = DataLoader(val_ds, args.batch_size, shuffle=False, collate_fn=collate, drop_last=False) 
     test_dl = DataLoader(test_ds, args.batch_size, shuffle=False, collate_fn=collate, drop_last=False)
     return train_dl, val_dl, test_dl
+
+
+
 
 
 def my_collate_fusion(batch):
