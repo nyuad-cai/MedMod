@@ -40,8 +40,8 @@ We do not provide the MIMIC-IV data itself. You must acquire the data yourself f
 6. The following commands will generate task-specific datasets, which can later be used in models. These commands are independent, if you are going to work only on one benchmark task, you can run only the corresponding command.
 
        python -m mimic3benchmark.scripts.create_in_hospital_mortality data/root/ data/in-hospital-mortality/
-       <!-- python -m mimic3benchmark.scripts.create_decompensation data/root/ data/decompensation/ -->
-       <!-- python -m mimic3benchmark.scripts.create_length_of_stay data/root/ data/length-of-stay/ -->
+       python -m mimic3benchmark.scripts.create_decompensation data/root/ data/decompensation/
+       python -m mimic3benchmark.scripts.create_length_of_stay data/root/ data/length-of-stay/
        python -m mimic3benchmark.scripts.create_phenotyping data/root/ data/phenotyping/
 
 After the above commands are done, there will be a directory `data/{task}` for each created benchmark task.
@@ -58,5 +58,5 @@ Use the following command to extract validation set from the training set. This 
 
        python -m mimic3models.split_train_val {dataset-directory}
        
-`{dataset-directory}` can be either `data/in-hospital-mortality`, `data/phenotyping`.
+`{dataset-directory}` can be either `data/in-hospital-mortality`, `data/phenotyping`, `data/decompensation`, `data/length-of-stay`, or `data/radiology`.
 

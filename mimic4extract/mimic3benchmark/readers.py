@@ -246,13 +246,9 @@ class PhenotypingReader(Reader):
         if index < 0 or index >= len(self._data):
             raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
         
-        # timeseries_path = self.ehr_paths[index]
         t = self.data_map[index]['time']
         y = self.data_map[index]['labels']
         stay_id = self.data_map[index]['stay_id']
-        # name = self._data[index][0]
-        # t = self._data[index][1]
-        # y = self._data[index][2] 
         (X, header) = self._read_timeseries(index)
 
         return {"X": X,
@@ -294,6 +290,84 @@ class PhenotypingReader(Reader):
                 "header": header,
                 "name": name}
 
+class RadiologyReader(Reader):
+    def __init__(self, dataset_dir, listfile=None):
+        """ Reader for radiology label prediction task.
+
+        :param dataset_dir: Directory where timeseries files are stored.
+        :param listfile:    Path to a listfile. If this parameter is left `None` then
+                            `dataset_dir/listfile.csv` will be used.
+        """
+        Reader.__init__(self, dataset_dir, listfile)
+        self._data = [line.split(',') for line in self._data]
+        self.data_map = {
+            mas[0]: {
+                'labels': list(map(int, mas[3:])),
+                'stay_id': float(mas[2]),
+                'time': float(mas[1]),
+                }
+                for mas in self._data
+        }
+
+        self._data = [(mas[0], float(mas[1]), list(map(int, mas[3:]))) for mas in self._data]
+
+    def _read_timeseries(self, ts_filename):
+        ret = []
+        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
+            header = tsfile.readline().strip().split(',')
+            assert header[0] == "Hours"
+            for line in tsfile:
+                mas = line.strip().split(',')
+                ret.append(np.array(mas))
+        return (np.stack(ret), header)
+    def read_by_file_name(self, index):
+
+        if index < 0 or index >= len(self._data):
+            raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
+        
+        t = self.data_map[index]['time']
+        y = self.data_map[index]['labels']
+        stay_id = self.data_map[index]['stay_id']
+        (X, header) = self._read_timeseries(index)
+
+        return {"X": X,
+                "t": t,
+                "y": y,
+                'stay_id': stay_id,
+                "header": header,
+                "name": index}
+
+    def read_example(self, index):
+        """ Reads the example with given index.
+
+        :param index: Index of the line of the listfile to read (counting starts from 0).
+        :return: Dictionary with the following keys:
+            X : np.array
+                2D array containing all events. Each row corresponds to a moment.
+                First column is the time and other columns correspond to different
+                variables.
+            t : float
+                Length of the data in hours. Note, in general, it is not equal to the
+                timestamp of last event.
+            y : array of ints
+                Radiology labels.
+            header : array of strings
+                Names of the columns. The ordering of the columns is always the same.
+            name: Name of the sample.
+        """
+        if index < 0 or index >= len(self._data):
+            raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
+
+        name = self._data[index][0]
+        t = self._data[index][1]
+        y = self._data[index][2]
+        (X, header) = self._read_timeseries(name)
+
+        return {"X": X,
+                "t": t,
+                "y": y,
+                "header": header,
+                "name": name}
 
 class MultitaskReader(Reader):
     def __init__(self, dataset_dir, listfile=None):
