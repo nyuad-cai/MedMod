@@ -438,9 +438,9 @@ def load_pretraining_meta(args):
     return groups
 
 load_task_meta = {'decompensation':load_decompensation_meta,
-                  'los':load_los_meta,
+                  'length-of-stay':load_los_meta,
                   'phenotyping':load_phenotyping_meta,
-                  'mortality':load_mortality_meta,
+                  'in-hospital-mortality':load_mortality_meta,
                   'readmission':load_readmission_meta,
                   'radiology':load_radiology_meta,
                   'pretraining':load_pretraining_meta}
