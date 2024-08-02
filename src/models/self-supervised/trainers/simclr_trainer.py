@@ -93,7 +93,6 @@ def train(model, args, train_loader, val_loader, **kwargs):
     if not os.path.exists(model_path):
         os.makedirs(model_path)
     
-        print("SIMCLR training")
         logger = kwargs['logger']
         checkpoints = ModelCheckpoint(dirpath=model_path,
                                   filename=filename,
