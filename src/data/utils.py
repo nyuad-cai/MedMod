@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 
 from random import choice
 from torch.utils.data import DataLoader
-from datasets import MIMICCXR, EHRdataset, MIMIC_CXR_EHR
+from .datasets import MIMICCXR, EHRdataset, MIMIC_CXR_EHR
 
 # chunk-wise reading
 def read_chunk(reader, chunk_size):
@@ -110,40 +110,6 @@ def get_transforms_simclr(args):
 
 
 
-# Note this function needs to be editted to mimic function above 
-def visualize_transforms_simclr(args, orig_img, split='train'):
-    # Create array of images 
-
-    new_images = [orig_img]
-    tt = ['Original image']
-    #normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    if split == 'train':
-        # Resize all images to same size
-        new_images = new_images + [transforms.Resize([args.resize, args.resize])(orig_img)]
-        tt = tt + ['Resize original image']
-        # Random affine
-        new_images = new_images + [transforms.RandomAffine(degrees=(-45, 45), translate=(0.1,0.1), scale=(0.7, 1.5), shear=(-25, 25))(new_images[-1])]
-        tt = tt + ['Random affine']
-        # Random crop
-        new_images = new_images + [RandomCrop()(new_images[-1])]
-        tt = tt + ['Random Crop']
-        # Resize to 256 x 256
-        new_images = new_images + [transforms.Resize([args.resize, args.resize], interpolation=3)(new_images[-1])]
-        tt = tt + ['Resize patch']
-        # Random horizontal flip 
-        new_images = new_images + [transforms.RandomHorizontalFlip()(new_images[-1])]
-        tt = tt + ['Random horizontal flip']
-        # Random color distortions
-        new_images = new_images + [RandomColorDistortion()(new_images[-1])]
-        tt = tt + ['Random color distortion']
-        
-        # Convert all to tensors
-        for i in range(0, len(new_images)):
-            new_images[i]=transforms.ToTensor()(new_images[i])
-    return new_images, tt
-
-
-
 
 def get_cxr_datasets(args):
     if args.transforms_cxr=='simclrv2':
@@ -205,110 +171,10 @@ def pad_zeros(arr, min_length=None):
 
 
 
-class MultiTransform(object):
-
-    def __init__(
-        self,
-        views,
-        normal_values,
-        _is_categorical_channel,
-        augmentation,
-        begin_pos
-    ):
-        self.views = views
-        self.normal_values = normal_values
-        self.rows = np.array([value for value in self.normal_values.values()])
-        self.augmentation = augmentation
-        self.continuous_variable = [0 if _is_categorical_channel[key] == True else 1 for key in _is_categorical_channel]
-        self.begin_pos = begin_pos
-        
-    def vertical_mask(self, data, max_percent=0.4):
-        # mask over each timestep (t, features)
-        length = data.shape[0]
-        if length < 4:
-            return data
-        size = int(np.random.randint(low=0, high=max(int(max_percent*length),1), size=1))
-        a = np.zeros(length , dtype=int)
-        a[:size] = 1
-        np.random.shuffle(a)
-        a = a.astype(bool)
-        data[a,1:] = self.rows
-        return data
-
-    def horizontal_mask(self, data, max_percent=0.4):
-        # mask over each feature (t, features)
-        length = data.shape[1] - 1
-        size = int(np.random.randint(low=0, high=max(int(max_percent*length),1), size=1))
-        features = np.unique(np.random.randint(low=1, high=length, size=size))
-        for i in features:
-            data[:,i+1] = self.normal_values[i]
-        return data
-    
-    def drop_start(self, data, max_percent=0.4):
-        length = data.shape[0]
-        start = int(np.random.randint(low=0, high=max(int(max_percent*length),1), size=1))
-        return data[start:,:]
-
-    def gaussian_blur(self, data):
-        mean, std = 1,0 
-        data[:, self.begin_pos] = data[:, self.begin_pos]  + np.random.normal(mean, std, (data.shape[0], len(self.begin_pos)))
-        return data
-
-    def rotation(self, data):
-        if choice([0,1]):
-            return np.flip(data, axis=0)
-        return data
-
-    def downsample(self, data):
-        if data.shape[0] < 20:
-            return data
-        step = choice([1, 2, 3])
-        return data[::step]
-
-    def __call__(self, data):
-        data_views = []                    
-        data_views.append(self.vertical_mask(data))
-        data_views.append(self.horizontal_mask(data))
-        data_views.append(self.horizontal_mask(self.vertical_mask(data)))
-        data_views.append((self.drop_start(data)))
-        data_views.append(data)
-
-        return data_views
-
-
 ############################################################################
 
 # Fusion utils
-R_CLASSES  = ['Atelectasis', 'Cardiomegaly', 'Consolidation', 'Edema',
-       'Enlarged Cardiomediastinum', 'Fracture', 'Lung Lesion',
-       'Lung Opacity', 'No Finding', 'Pleural Effusion', 'Pleural Other',
-       'Pneumonia', 'Pneumothorax', 'Support Devices']
-
-CLASSES = [
-       'Acute and unspecified renal failure', 'Acute cerebrovascular disease',
-       'Acute myocardial infarction', 'Cardiac dysrhythmias',
-       'Chronic kidney disease',
-       'Chronic obstructive pulmonary disease and bronchiectasis',
-       'Complications of surgical procedures or medical care',
-       'Conduction disorders', 'Congestive heart failure; nonhypertensive',
-       'Coronary atherosclerosis and other heart disease',
-       'Diabetes mellitus with complications',
-       'Diabetes mellitus without complication',
-       'Disorders of lipid metabolism', 'Essential hypertension',
-       'Fluid and electrolyte disorders', 'Gastrointestinal hemorrhage',
-       'Hypertension with complications and secondary hypertension',
-       'Other liver diseases', 'Other lower respiratory disease',
-       'Other upper respiratory disease',
-       'Pleurisy; pneumothorax; pulmonary collapse',
-       'Pneumonia (except that caused by tuberculosis or sexually transmitted disease)',
-       'Respiratory failure; insufficiency; arrest (adult)',
-       'Septicemia (except in labor)', 
-       'Shock']
-
-
-
 def get_all_metadata(args):
-
     cxr_metadata = pd.read_csv(f'{args.cxr_data_root}/mimic-cxr-2.0.0-metadata.csv')
     icu_stay_metadata = pd.read_csv(f'{args.ehr_data_root}/root/all_stays.csv')
     columns = ['subject_id', 'stay_id', 'intime', 'outtime']
@@ -329,6 +195,8 @@ def get_all_metadata(args):
     cxr_merged_icustays['full_stay_time'] = cxr_merged_icustays.outtime-cxr_merged_icustays.intime
     cxr_merged_icustays['full_stay_time'] = cxr_merged_icustays['full_stay_time'].apply(lambda x: np.round(x.total_seconds()/60/60,3))
 
+    return cxr_merged_icustays 
+
 def get_recent_cxr(cxr_merged_icustays_AP):
     groups = cxr_merged_icustays_AP.groupby('stay_id')
     groups_selected = []
@@ -339,6 +207,8 @@ def get_recent_cxr(cxr_merged_icustays_AP):
     groups = pd.concat(groups_selected, ignore_index=True)
     groups['lower'] = 0
     groups['upper'] = groups.full_stay_time
+    
+    return groups
 
 def get_all_cxr(cxr_merged_icustays_AP):
     groups = cxr_merged_icustays_AP.groupby('study_id').first()
@@ -347,22 +217,22 @@ def get_all_cxr(cxr_merged_icustays_AP):
     groups = groups.reset_index()    
     groups['lower'] = 0
     groups['upper'] = groups.time_diff
+    
+    return groups 
 
 def load_decompensation_meta(args):
     
     cxr_merged_icustays = get_all_metadata(args)
     train_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/train_listfile.csv')
-    train_listfile = train_listfile
     val_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/val_listfile.csv')
-    val_listfile = val_listfile
     test_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/test_listfile.csv')
-    test_listfile = test_listfile
-    listfile = train_listfile.append(test_listfile)
-    listfile = listfile.append(val_listfile)
+    
+    # double check that this line does not cause issues
+    listfile = train_listfile.append([val_listfile, test_listfile])
     listfile['subject_id'] = listfile['stay'].apply(lambda x: x.split("_")[0])
-    columns2 = ['subject_id', 'endtime']
     listfile['subject_id'] = listfile['subject_id'].astype('int64')
-    cxr_merged_icustays = cxr_merged_icustays.merge(listfile[columns2], how='inner', on='subject_id')
+    columns = ['subject_id', 'endtime']
+    cxr_merged_icustays = cxr_merged_icustays.merge(listfile[columns], how='inner', on='subject_id')
     cxr_merged_icustays.endtime=pd.to_datetime(cxr_merged_icustays.endtime)
     cxr_merged_icustays_during = cxr_merged_icustays.loc[((cxr_merged_icustays.StudyDateTime>=cxr_merged_icustays.intime)&\
                                                           (cxr_merged_icustays.StudyDateTime<=cxr_merged_icustays.endtime))]
@@ -377,20 +247,15 @@ def load_los_meta(args):
 
     cxr_merged_icustays = get_all_metadata(args)
     train_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/train_listfile.csv')
-    train_listfile = train_listfile
     val_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/val_listfile.csv')
-    val_listfile = val_listfile
     test_listfile = pd.read_csv(f'/scratch/se1525/mml-ssl/{args.task}/test_listfile.csv')
-    test_listfile = test_listfile
-
-    listfile = train_listfile.append(test_listfile)
-    listfile = listfile.append(val_listfile)
+    
+    # double check that this line does not cause issues
+    listfile = train_listfile.append([val_listfile, test_listfile])
     listfile['subject_id'] = listfile['stay'].apply(lambda x: x.split("_")[0])
-
-    columns2 = ['subject_id', 'endtime']
     listfile['subject_id'] = listfile['subject_id'].astype('int64')
-
-    cxr_merged_icustays = cxr_merged_icustays.merge(listfile[columns2], how='inner', on='subject_id')
+    columns = ['subject_id', 'endtime']
+    cxr_merged_icustays = cxr_merged_icustays.merge(listfile[columns], how='inner', on='subject_id')
     cxr_merged_icustays.endtime=pd.to_datetime(cxr_merged_icustays.endtime)
 
     cxr_merged_icustays_during = cxr_merged_icustays.loc[((cxr_merged_icustays.StudyDateTime>=cxr_merged_icustays.intime)&\
@@ -442,12 +307,15 @@ def load_radiology_meta(args):
 
     return groups
 
+#NOTE: only if pretraining with large dataset, i.e. logic should be added to have a 'pretraining' task if args.dataset='all'
 def load_pretraining_meta(args):
     cxr_merged_icustays = get_all_metadata(args)
     cxr_merged_icustays_AP = cxr_merged_icustays[cxr_merged_icustays['ViewPosition'] == 'AP']
     groups = cxr_merged_icustays_AP
     return groups
 
+# check the task names to match the dictionary 
+# check pre-training settings per task for supervised 
 load_task_meta = {'decompensation':load_decompensation_meta,
                   'length-of-stay':load_los_meta,
                   'phenotyping':load_phenotyping_meta,

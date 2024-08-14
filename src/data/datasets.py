@@ -7,8 +7,32 @@ import pandas as pd
 
 from PIL import Image
 from torch.utils.data import Dataset
-from data.utils import R_CLASSES, CLASSES
 
+R_CLASSES  = ['Atelectasis', 'Cardiomegaly', 'Consolidation', 'Edema',
+       'Enlarged Cardiomediastinum', 'Fracture', 'Lung Lesion',
+       'Lung Opacity', 'No Finding', 'Pleural Effusion', 'Pleural Other',
+       'Pneumonia', 'Pneumothorax', 'Support Devices']
+
+CLASSES = [
+       'Acute and unspecified renal failure', 'Acute cerebrovascular disease',
+       'Acute myocardial infarction', 'Cardiac dysrhythmias',
+       'Chronic kidney disease',
+       'Chronic obstructive pulmonary disease and bronchiectasis',
+       'Complications of surgical procedures or medical care',
+       'Conduction disorders', 'Congestive heart failure; nonhypertensive',
+       'Coronary atherosclerosis and other heart disease',
+       'Diabetes mellitus with complications',
+       'Diabetes mellitus without complication',
+       'Disorders of lipid metabolism', 'Essential hypertension',
+       'Fluid and electrolyte disorders', 'Gastrointestinal hemorrhage',
+       'Hypertension with complications and secondary hypertension',
+       'Other liver diseases', 'Other lower respiratory disease',
+       'Other upper respiratory disease',
+       'Pleurisy; pneumothorax; pulmonary collapse',
+       'Pneumonia (except that caused by tuberculosis or sexually transmitted disease)',
+       'Respiratory failure; insufficiency; arrest (adult)',
+       'Septicemia (except in labor)', 
+       'Shock']
 
 # CXR datset
 class MIMICCXR(Dataset):
@@ -35,12 +59,13 @@ class MIMICCXR(Dataset):
         self.filenames_loaded = [filename  for filename in self.filenames_loaded if filename in self.filesnames_to_labels]
 
     def __getitem__(self, index):
-        # if isinstance(index, str):
-        #     img = Image.open(self.filenames_to_path[index]).convert('RGB')
-        #     labels = torch.tensor(self.filesnames_to_labels[index]).float()
-        #     if self.transform is not None:
-        #         img = self.transform(img)
-        #     return img, labels
+        # why was this commented out? 
+        if isinstance(index, str):
+            img = Image.open(self.filenames_to_path[index]).convert('RGB')
+            labels = torch.tensor(self.filesnames_to_labels[index]).float()
+            if self.transform is not None:
+                img = self.transform(img)
+            return img, labels
           
         
         filename = self.filenames_loaded[index]
@@ -50,340 +75,143 @@ class MIMICCXR(Dataset):
         if self.transform is not None:
             img = self.transform(img)
         return img, labels
-    
+
     def __len__(self):
         return len(self.filenames_loaded)
 
 
 ############################################################################
 # EHR dataset
-class Reader(object):
-    def __init__(self, dataset_dir, listfile=None):
+class EHRdataset(Dataset):
+    def __init__(self, args, discretizer, normalizer, listfile, dataset_dir, return_names=True, period_length=48.0, transforms=None):
+        self.return_names = return_names
+        self.discretizer = discretizer
+        self.normalizer = normalizer
+        self._period_length = period_length
+        self.args=args
+
         self._dataset_dir = dataset_dir
-        self._current_index = 0
-        if listfile is None:
-            listfile_path = os.path.join(dataset_dir, "listfile.csv")
-        else:
-            listfile_path = listfile
+        listfile_path = listfile
         with open(listfile_path, "r") as lfile:
             self._data = lfile.readlines()
         self._listfile_header = self._data[0]
+        self.CLASSES = self._listfile_header.strip().split(',')[3:]
         self._data = self._data[1:]
+        self.transforms = transforms
 
-    def get_number_of_examples(self):
-        return len(self._data)
-
-    def random_shuffle(self, seed=None):
-        if seed is not None:
-            random.seed(seed)
-        random.shuffle(self._data)
-
-    def read_example(self, index):
-        raise NotImplementedError()
-
-    def read_next(self):
-        to_read_index = self._current_index
-        self._current_index += 1
-        if self._current_index == self.get_number_of_examples():
-            self._current_index = 0
-        return self.read_example(to_read_index)
-
-
-class PhenotypingReader(Reader):
-    def __init__(self, dataset_dir, listfile=None):
-        Reader.__init__(self, dataset_dir, listfile)
         self._data = [line.split(',') for line in self._data]
-        self._data = [(mas[0], float(mas[1]), int(mas[2]) , list(map(int, mas[3:]))) for mas in self._data]
-
-    def _read_timeseries(self, ts_filename):
-        ret = []
-        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
-            header = tsfile.readline().strip().split(',')
-            assert header[0] == "Hours"
-            for line in tsfile:
-                mas = line.strip().split(',')
-                ret.append(np.array(mas))
-        return (np.stack(ret), header)
-
-    def read_example(self, index):
-        if index < 0 or index >= len(self._data):
-            raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
-
-        name = self._data[index][0]
-        t = self._data[index][1]
-        y = self._data[index][3]
-        (X, header) = self._read_timeseries(name)
-
-        return {"X": X,
-                "t": t,
-                "y": y,
-                "header": header,
-                "name": name}
-
-class InHospitalMortalityReader(Reader):
-    def __init__(self, dataset_dir, listfile=None, period_length=48.0):
-        Reader.__init__(self, dataset_dir, listfile)
-        self._data = [line.split(',') for line in self._data]
-        self._data = [(x, int(y)) for (x, t, stay_id, y) in self._data]
-        self._period_length = period_length
-
-    def _read_timeseries(self, ts_filename):
-        ret = []
-        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
-            header = tsfile.readline().strip().split(',')
-            assert header[0] == "Hours"
-            for line in tsfile:
-                mas = line.strip().split(',')
-                ret.append(np.array(mas))
-        return (np.stack(ret), header)
-
-    def read_example(self, index):
-        if index < 0 or index >= len(self._data):
-            raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
-
-        name = self._data[index][0]
-        t = self._period_length
-        y = self._data[index][1]
-        (X, header) = self._read_timeseries(name)
-
-        return {"X": X,
-                "t": t,
-                "y": y,
-                "header": header,
-                "name": name}
-
-class DecompensationReader(Reader):
-    def __init__(self, dataset_dir, listfile=None):
-        Reader.__init__(self, dataset_dir, listfile)
-        self._data = [line.split(',') for line in self._data]
-        # print(self._data[1])
-        self._data = [(x, float(t), int(stay_id) ,int(y)) for (x, t, stay_id , y) in self._data]
-
-    def _read_timeseries(self, ts_filename, time_bound):
-        ret = []
-        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
-            header = tsfile.readline().strip().split(',')
-            assert header[0] == "Hours"
-            for line in tsfile:
-                mas = line.strip().split(',')
-                t = float(mas[0])
-                if t > time_bound + 1e-6:
-                    break
-                ret.append(np.array(mas))
-        return (np.stack(ret), header)
-
-    def read_example(self, index):
-        if index < 0 or index >= len(self._data):
-            raise ValueError("Index must be from 0 (inclusive) to number of examples (exclusive).")
-
-        name = self._data[index][0]
-        t = self._data[index][1]
-        y = self._data[index][3]
-        (X, header) = self._read_timeseries(name, t)
-
-        return {"X": X,
-                "t": t,
-                "y": y,
-                "header": header,
-                "name": name}
-
-class LengthOfStayReader(Reader):
-    def __init__(self, dataset_dir, listfile=None):
-        Reader.__init__(self, dataset_dir, listfile)
-        self._data = [line.split(',') for line in self._data]
-        self._data = [(x, float(t), float(y)) for (x, t, y) in self._data]
-
-    def _read_timeseries(self, ts_filename, time_bound):
-        ret = []
-        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
-            header = tsfile.readline().strip().split(',')
-            assert header[0] == "Hours"
-            for line in tsfile:
-                mas = line.strip().split(',')
-                t = float(mas[0])
-                if t > time_bound + 1e-6:
-                    break
-                ret.append(np.array(mas))
-        return (np.stack(ret), header)
-
-    def read_example(self, index):
-        if index < 0 or index >= len(self._data):
-            raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
-
-        name = self._data[index][0]
-        t = self._data[index][1]
-        y = self._data[index][2]
-        (X, header) = self._read_timeseries(name, t)
-
-        return {"X": X,
-                "t": t,
-                "y": y,
-                "header": header,
-                "name": name}
-
-class RadiologyReader(Reader):
-    def __init__(self, dataset_dir, listfile=None):
-        Reader.__init__(self, dataset_dir, listfile)
-        self._data = [line.split(',') for line in self._data]
-        self._data = [(mas[0], float(mas[1]), int(mas[2]) , list(map(int, mas[3:]))) for mas in self._data]
-
-    def _read_timeseries(self, ts_filename):
-        ret = []
-        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
-            header = tsfile.readline().strip().split(',')
-            assert header[0] == "Hours"
-            for line in tsfile:
-                mas = line.strip().split(',')
-                ret.append(np.array(mas))
-        return (np.stack(ret), header)
-
-    def read_example(self, index):
-        if index < 0 or index >= len(self._data):
-            raise ValueError("Index must be from 0 (inclusive) to number of lines (exclusive).")
-
-        name = self._data[index][0]
-        t = self._data[index][1]
-        y = self._data[index][3]
-        (X, header) = self._read_timeseries(name)
-
-        return {"X": X,
-                "t": t,
-                "y": y,
-                "header": header,
-                "name": name}
-
-    
-
-# class EHRdataset(Dataset):
-#     def __init__(self, args, discretizer, normalizer, listfile, dataset_dir, return_names=True, period_length=48.0, transforms=None):
-#         self.return_names = return_names
-#         self.discretizer = discretizer
-#         self.normalizer = normalizer
-#         self._period_length = period_length
-#         self.args=args
-
-#         self._dataset_dir = dataset_dir
-#         listfile_path = listfile
-#         with open(listfile_path, "r") as lfile:
-#             self._data = lfile.readlines()
-#         self._listfile_header = self._data[0]
-#         self.CLASSES = self._listfile_header.strip().split(',')[3:]
-#         self._data = self._data[1:]
-#         self.transforms = transforms
-
-#         self._data = [line.split(',') for line in self._data]
-#         if self.args.task=='length-of-stay' or self.args.task=='decompensation':
-#             self.data_map = {
-#                 (mas[0],float(mas[1])): {
-#                     'labels': list(map(float, mas[3:])),
-#                     'stay_id': float(mas[2]),
-#                     'time': float(mas[1]),
-#                     }
-#                 for mas in self._data
+        if self.args.task=='length-of-stay' or self.args.task=='decompensation':
+            self.data_map = {
+                (mas[0],float(mas[1])): {
+                    'labels': list(map(float, mas[3:])),
+                    'stay_id': float(mas[2]),
+                    'time': float(mas[1]),
+                    }
+                for mas in self._data
                     
-#                 }
-#         else:
-#             self.data_map = {
-#                 mas[0]: {
-#                     'labels': list(map(float, mas[3:])),
-#                     'stay_id': float(mas[2]),
-#                     'time': float(mas[1]),
-#                     }
-#                 for mas in self._data
-#             }
+                }
+        else:
+            self.data_map = {
+                mas[0]: {
+                    'labels': list(map(float, mas[3:])),
+                    'stay_id': float(mas[2]),
+                    'time': float(mas[1]),
+                    }
+                for mas in self._data
+            }
 
-#         self.names = list(self.data_map.keys())
-#         self.times= None
+        self.names = list(self.data_map.keys())
+        self.times= None
     
-#     def read_chunk(self, chunk_size):
-#         data = {}
-#         for i in range(chunk_size):
-#             ret = reader.read_next()
-#             for k, v in ret.items():
-#                 if k not in data:
-#                     data[k] = []
-#                 data[k].append(v)
-#         data["header"] = data["header"][0]
-#         return data
+    def read_chunk(self, chunk_size):
+        data = {}
+        for i in range(chunk_size):
+            ret = reader.read_next()
+            for k, v in ret.items():
+                if k not in data:
+                    data[k] = []
+                data[k].append(v)
+        data["header"] = data["header"][0]
+        return data
 
-#     def _read_timeseries(self, ts_filename, lower_bound, upper_bound):
+    def _read_timeseries(self, ts_filename, lower_bound, upper_bound):
         
-#         ret = []
-#         with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
-#             header = tsfile.readline().strip().split(',')
-#             assert header[0] == "Hours"
-#             for line in tsfile:
-#                 mas = line.strip().split(',')
-#                 t = float(mas[0])
-#                 if t < lower_bound:
-#                     continue
-#                 elif (t> lower_bound) & (t <upper_bound) :
-#                     ret.append(np.array(mas))
-#                 elif t > upper_bound:
-#                     break
-#         try:
-#             # print("Hour", upper_bound)
-#             # print("EHR data", np.stack(ret))
-#             return (np.stack(ret), header)
-#         except ValueError:
-#             print("exception in read_timeseries")
-#             ret = ([['0.11666666666666667', '', '', '', '', '', '', '', '', '109', '',
-#                      '', '', '30', '', '', '', ''],
-#                     ['0.16666666666666666', '', '61.0', '', '', '', '', '', '', '109',
-#                     '', '64', '97.0', '29', '74.0', '', '', '']])
-#             # print(ts_filename, lower_bound, upper_bound)
-#             return (np.stack(ret), header)
+        ret = []
+        with open(os.path.join(self._dataset_dir, ts_filename), "r") as tsfile:
+            header = tsfile.readline().strip().split(',')
+            assert header[0] == "Hours"
+            for line in tsfile:
+                mas = line.strip().split(',')
+                t = float(mas[0])
+                if t < lower_bound:
+                    continue
+                elif (t> lower_bound) & (t <upper_bound) :
+                    ret.append(np.array(mas))
+                elif t > upper_bound:
+                    break
+        try:
+            # print("Hour", upper_bound)
+            # print("EHR data", np.stack(ret))
+            return (np.stack(ret), header)
+        except ValueError:
+            print("exception in read_timeseries")
+            ret = ([['0.11666666666666667', '', '', '', '', '', '', '', '', '109', '',
+                     '', '', '30', '', '', '', ''],
+                    ['0.16666666666666666', '', '61.0', '', '', '', '', '', '', '109',
+                    '', '64', '97.0', '29', '74.0', '', '', '']])
+            # print(ts_filename, lower_bound, upper_bound)
+            return (np.stack(ret), header)
     
-#     def read_by_file_name(self, index, time, lower_bound, upper_bound):
-#         if self.args.task=='length-of-stay' or self.args.task=='decompensation':
-#             t = self.data_map[(index,time)]['time'] 
-#             y = self.data_map[(index,time)]['labels']
-#             stay_id = self.data_map[(index,time)]['stay_id']
-#             (X, header) = self._read_timeseries(index, lower_bound=lower_bound, upper_bound=time)
-#         else:
-#             t = self.data_map[index]['time'] 
-#             y = self.data_map[index]['labels']
-#             stay_id = self.data_map[index]['stay_id']
-#             (X, header) = self._read_timeseries(index, lower_bound=lower_bound, upper_bound=upper_bound)
+    def read_by_file_name(self, index, time, lower_bound, upper_bound):
+        if self.args.task=='length-of-stay' or self.args.task=='decompensation':
+            t = self.data_map[(index,time)]['time'] 
+            y = self.data_map[(index,time)]['labels']
+            stay_id = self.data_map[(index,time)]['stay_id']
+            (X, header) = self._read_timeseries(index, lower_bound=lower_bound, upper_bound=time)
+        else:
+            t = self.data_map[index]['time'] 
+            y = self.data_map[index]['labels']
+            stay_id = self.data_map[index]['stay_id']
+            (X, header) = self._read_timeseries(index, lower_bound=lower_bound, upper_bound=upper_bound)
 
-#         return {"X": X,
-#                 "t": t,
-#                 "y": y,
-#                 'stay_id': stay_id,
-#                 "header": header,
-#                 "name": index}
+        return {"X": X,
+                "t": t,
+                "y": y,
+                'stay_id': stay_id,
+                "header": header,
+                "name": index}
 
-#     def __getitem__(self, item_args, lower, upper):
-#         if self.args.task=='length-of-stay' or self.args.task=='decompensation':
-#             time = item_args[1]
-#             index = item_args[0]
-#         else:
-#             index = item_args
-#             if isinstance(index, int):
-#                 index = self.names[index]
-#             time = None
-#         ret = self.read_by_file_name(index, time, lower, upper)
-#         data = ret["X"]
-#         ts = data.shape[0]
-#         # print("Times included", ts) #ret["t"] if ret['t'] > 0.0 else self._period_length
-#         ys = ret["y"]
-#         names = ret["name"]
+    def __getitem__(self, item_args, lower, upper):
+        if self.args.task=='length-of-stay' or self.args.task=='decompensation':
+            time = item_args[1]
+            index = item_args[0]
+        else:
+            index = item_args
+            if isinstance(index, int):
+                index = self.names[index]
+            time = None
+        ret = self.read_by_file_name(index, time, lower, upper)
+        data = ret["X"]
+        # ts = data.shape[0]
+        ts = ret["t"] if ret['t'] > 0.0 else self._period_length    
+        ys = ret["y"]
+        names = ret["name"]
 
 
-#         data = self.discretizer.transform(data, end=ts)[0]
-#         if (self.normalizer is not None):
-#             data = self.normalizer.transform(data)
+        data = self.discretizer.transform(data, end=ts)[0]
+        if (self.normalizer is not None):
+            data = self.normalizer.transform(data)
 
         
-#         if 'length-of-stay' in self._dataset_dir:
-#             ys = np.array(ys, dtype=np.float32) if len(ys) > 1 else np.array(ys, dtype=np.float32)[0]
-#         else:
-#             ys = np.array(ys, dtype=np.int32) if len(ys) > 1 else np.array(ys, dtype=np.int32)[0]
-#         return data, ys
+        if 'length-of-stay' in self._dataset_dir:
+            ys = np.array(ys, dtype=np.float32) if len(ys) > 1 else np.array(ys, dtype=np.float32)[0]
+        else:
+            ys = np.array(ys, dtype=np.int32) if len(ys) > 1 else np.array(ys, dtype=np.int32)[0]
+        return data, ys
 
     
-#     def __len__(self):
-#         return len(self.names)
+    def __len__(self):
+        return len(self.names)
     
 
 
@@ -417,8 +245,8 @@ class MIMIC_CXR_EHR(Dataset):
             self.ehr_paired_list = list(zip(self.ehr_files_paired, self.paired_times))
         
         self.args = args
-        self.split = split        
-
+        self.split = split  
+        self.data_ratio = self.args.data_ratio if split=='train' else 1.0
 
         self.get_data = {'paired':self._get_paired,
                          'ehr_only':self._get_ehr_only,
@@ -426,7 +254,7 @@ class MIMIC_CXR_EHR(Dataset):
                          'joint_ehr':self._get_joint_ehr
                         }
         
-        self.get_lens = {'paired':len(self.ehr_files_paired),
+        self.get_len = {'paired':len(self.ehr_files_paired),
                          'ehr_only':len(self.ehr_files_all),
                          'radiology':len(self.cxr_files_all),
                          'joint_ehr':len(self.ehr_files_paired) + int(self.data_ratio * len(self.ehr_files_unpaired))
@@ -455,21 +283,14 @@ class MIMIC_CXR_EHR(Dataset):
         upper = self.metadata_with_labels.iloc[index].upper
         if self.args.task == 'decompensation' or self.args.task == 'length-of-stay':
             ehr_data, labels_ehr = self.ehr_ds.__getitem__(self.ehr_paired_list[index], lower, upper)
-            # ehr_data, labels_ehr = self.ehr_ds[self.ehr_paired_list[index]]
         else:
             ehr_data, labels_ehr = self.ehr_ds.__getitem__(self.ehr_files_paired[index],lower,upper)
-            # ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_paired[index]]
-        # time_diff = self.metadata_with_labels.iloc[index].time_diff
-                        
-        # if self.args.beta_infonce:
-        #     return ehr_data, cxr_data, labels_ehr, labels_cxr
-        # else:
-            # return ehr_data, cxr_data, labels_ehr, labels_cxr
         return ehr_data, cxr_data, labels_ehr, labels_cxr
     
+    # changed to return 0 EHR data
     def _get_radiology(self,index):
-        ehr_data, labels_ehr = self.ehr_ds[self.ehr_files_all[index]]
-        cxr_data, labels_cxr = None, None
+        ehr_data, labels_ehr = np.zeros((1, 10)), np.zeros(self.args.num_classes)
+        cxr_data, labels_cxr = self.cxr_ds[self.cxr_files_all[index]]
         return ehr_data, cxr_data, labels_ehr, labels_cxr
     
     def _get_ehr_only(self,index):

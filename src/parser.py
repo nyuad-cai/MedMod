@@ -1,8 +1,3 @@
-""" 
-    Created July 13, 2022
-    This scripts initiates all the input variables for the main file
-"""
-
 import argparse
 
 def initiate_parsing():
@@ -11,7 +6,7 @@ def initiate_parsing():
     # Task setup
     parser.add_argument('--device', type=str, help='cuda device', default='0')
     parser.add_argument('--num_gpu', type=int, help='number of gpus for training', default=1)
-    parser.add_argument('--epochs', type=int, default=300, help='number of epochs to train for')
+    parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.0001, help='base learning rate simclr pretraining')
     parser.add_argument('--save_dir', type=str, help='Directory where all output files are stored', default='/scratch/se1525/mml-ssl/results')
     parser.add_argument('--labels_set', type=str, default='pheno', help='pheno, radiology')
@@ -25,6 +20,7 @@ def initiate_parsing():
     parser.add_argument('--eval_set', type=str, default='val', help='evaluation set: val or test')
     parser.add_argument('--job_number', type=str, default='0', help='slurm job number for jubail')
     parser.add_argument('--eval_epoch', type=int, help='epoch to evaluate for model selection', default=0)
+    parser.add_argument('--retrieve_cxr',type=str,default='recent', choices=['recent','all'], help='either to retrieve all cxr or only the most recent')
 
     
     # EHR setup
@@ -54,7 +50,7 @@ def initiate_parsing():
 
     # SimCLR setup
     parser.add_argument('--load_state_simclr', type=str, default=None, help='state dir path for simclr model')
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--transforms_cxr', type=str, default=None, help='set image transforms of simclrv2')
     parser.add_argument('--temperature', type=float, default=0.1, help='simclr temperature')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay')
@@ -81,17 +77,26 @@ def initiate_parsing():
 
 
 
-    # Optimizer and normalizer
+    # Unknown classify later 
     parser.add_argument('--beta_1', type=float, default=0.9,
                         help='beta_1 param for Adam optimizer')
     parser.add_argument('--normalizer_state', type=str, default=None,
                         help='Path to a state file of a normalizer. Leave none if you want to use one of the provided ones.')
     
     
-    # VICReg
+    # Vicreg
     parser.add_argument('--sim_coeff', type=float, default=25, help='vicreg sim coeff')
     parser.add_argument('--std_coeff', type=float, default=25, help='vicreg std coeff')
     parser.add_argument('--cov_coeff', type=float, default=1, help='vicreg cov coeff')
     parser.add_argument('--vicreg', action='store_true', help='vicreg loss computation')
-    
+
+    # ALIGN
+    parser.add_argument('--align', action='store_true', help='load align model weights')
+   
+   # MedCLR
+    parser.add_argument('--k', type=float, default=1, help='parameter for medclr loss')
+
+    #For dataloader changes
+    parser.add_argument('--tmp_dir', type=str, default=None, help='temporary directory to store data for current node')
+   
     return parser

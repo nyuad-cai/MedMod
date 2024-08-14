@@ -12,14 +12,8 @@ import torchvision
 
 class EHRModel(nn.Module):
 
-    def __init__(self, 
-                 hidden_dim: int =256, 
-                 input_dim: int =76,  
-                 batch_first: bool = True, 
-                 dropout: float = 0.0, 
-                 layers: int = 1,
-                 projection_dim: int = 512):
-        super().__init__()
+    def __init__(self, hidden_dim=128, input_dim=76, num_classes=1, batch_first=True, dropout=0.0, layers=1):
+        super(EHRModel, self).__init__()
         self.hidden_dim = hidden_dim
         self.layers = layers
         for layer in range(layers):
@@ -32,7 +26,7 @@ class EHRModel(nn.Module):
 
         self.do = nn.Dropout(dropout)
         self.feats_dim = hidden_dim
-        self.projection_layer = nn.Linear(hidden_dim, projection_dim)
+        self.dense_layer = nn.Identity() 
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -53,21 +47,35 @@ class EHRModel(nn.Module):
              x, (ht, _) = getattr(self, f'layer{layer}')(x)
         feats = ht.squeeze()
         out = self.do(feats)
-        out = self.projection_layer(out)
+        out = self.dense_layer(out)
+#         scores = torch.sigmoid(out)
         return out
-    
+
+
 class CXRModel(nn.Module):
 
-    def __init__(self,
-                 backbone: str = 'resnet34',
-                 projection_dim: int = 512):
-        super().__init__()
+    def __init__(self, args, hidden_dim, device='cpu'):
+        super(CXRModel, self).__init__()
+        self.args = args
+        self.device = device
+        self.vision_backbone = getattr(torchvision.models, self.args.vision_backbone)(pretrained=self.args.pretrained) 
+        classifiers = [ 'classifier', 'fc']
+        for classifier in classifiers:
+            cls_layer = getattr(self.vision_backbone, classifier, None)
+            if cls_layer is None:
+                continue
+            d_visual = cls_layer.in_features
+            setattr(self.vision_backbone, classifier, nn.Identity(d_visual))
+            break
+            
+        self.bce_loss = torch.nn.BCELoss(size_average=True)
+        #self.classifier = nn.Sequential(nn.Linear(d_visual, self.args.vision_num_classes), nn.Sigmoid())
+        self.feats_dim = d_visual
         
-        self.vision_backbone = getattr(torchvision.models, backbone)(pretrained=False)
-        self.vision_backbone.fc = nn.Linear(self.vision_backbone.fc.in_features,projection_dim)
 
+    def forward(self, x, labels=None, n_crops=0, bs=16):
+        lossvalue_bce = torch.zeros(1).to(self.device)
 
-
-    def forward(self, x: torch.Tensor):
         visual_feats = self.vision_backbone(x)
+
         return  visual_feats

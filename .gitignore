@@ -100,3 +100,9 @@ ENV/
 # States of models
 keras_states/
 states/
+
+# Logger 
+.neptune/
+
+# Model checkpoints
+src/checkpoints
