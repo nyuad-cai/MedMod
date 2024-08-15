@@ -1,4 +1,4 @@
-name: MedMod
+name: medmod
 channels:
   - pytorch
   - nvidia
@@ -258,4 +258,3 @@ dependencies:
       - typeshed-client==2.1.0
       - warmup-scheduler==0.3
       - yarl==1.7.2
-
