@@ -8,14 +8,32 @@ from datetime import datetime
 import pandas as pd
 import yaml
 import random
-random.seed(49297)
+random.seed(49297)  # Set seed for reproducibility
 from tqdm import tqdm
 
 
 def process_partition(args, definitions, code_to_group, id_to_group, group_to_id,
                       partition, sample_rate=1.0, shortest_length=4,
                       eps=1e-6, future_time_interval=24.0, fixed_hours=48.0):
+    """
+    Process a specific data partition (train or test) to create multi-task prediction data.
 
+    Args:
+        args (argparse.Namespace): Command-line arguments containing paths for root and output directories.
+        definitions (dict): Phenotype definitions from YAML file.
+        code_to_group (dict): Mapping from ICD9 codes to phenotype groups.
+        id_to_group (list): List of phenotype group IDs.
+        group_to_id (dict): Mapping from phenotype groups to their IDs.
+        partition (str): The data partition to process ('train' or 'test').
+        sample_rate (float): The rate at which to sample times from the time-series data.
+        shortest_length (float): Minimum length (in hours) for time-series to be considered.
+        eps (float): Small epsilon value to handle edge cases in time comparisons.
+        future_time_interval (float): Time interval in hours to consider for decompensation task.
+        fixed_hours (float): Fixed length (in hours) to determine mask values for in-hospital mortality.
+
+    Outputs:
+        Creates CSV files with time-series data and a listfile for each partition containing multi-task labels.
+    """
     output_dir = os.path.join(args.output_path, partition)
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
@@ -47,18 +65,18 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                 lb_filename = ts_filename.replace("_timeseries", "")
                 label_df = pd.read_csv(os.path.join(patient_folder, lb_filename))
 
-                # empty label file, skip globally
+                # Skip if the label file is empty
                 if label_df.shape[0] == 0:
                     print("\n\t(empty label file)", patient, ts_filename)
                     continue
 
-                # find length of stay, skip globally if it is missing
-                los = 24.0 * label_df.iloc[0]['Length of Stay']  # in hours
+                # Get length of stay, skip if missing
+                los = 24.0 * label_df.iloc[0]['Length of Stay']  # Length of stay in hours
                 if pd.isnull(los):
                     print("\n\t(length of stay is missing)", patient, ts_filename)
                     continue
 
-                # find all event in ICU, skip globally if there is no event in ICU
+                # Read and filter time-series data
                 ts_lines = ts_file.readlines()
                 header = ts_lines[0]
                 ts_lines = ts_lines[1:]
@@ -72,13 +90,13 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                     print("\n\t(no events in ICU) ", patient, ts_filename)
                     continue
 
-                # add length of stay
+                # Append length of stay
                 loses.append(los)
 
-                # find in hospital mortality
+                # Determine in-hospital mortality
                 mortality = int(label_df.iloc[0]["Mortality"])
 
-                # write episode data and add file name
+                # Write episode data and add file name
                 output_ts_filename = patient + "_" + ts_filename
                 with open(os.path.join(output_dir, output_ts_filename), "w") as outfile:
                     outfile.write(header)
@@ -86,15 +104,13 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                         outfile.write(line)
                 file_names.append(output_ts_filename)
 
-                # create in-hospital mortality
+                # Create in-hospital mortality data
                 ihm_label = mortality
-
                 ihm_mask = 1
                 if los < fixed_hours - eps:
                     ihm_mask = 0
                 if event_times[0] > fixed_hours + eps:
                     ihm_mask = 0
-
                 ihm_position = 47
                 if ihm_mask == 0:
                     ihm_position = 0
@@ -103,17 +119,17 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                 ihm_labels.append(ihm_label)
                 ihm_positions.append(ihm_position)
 
-                # create length of stay
+                # Create length of stay data
                 sample_times = np.arange(0.0, los + eps, sample_rate)
-                sample_times = np.array([int(x+eps) for x in sample_times])
+                sample_times = np.array([int(x + eps) for x in sample_times])
                 cur_los_masks = map(int, (sample_times > shortest_length) & (sample_times > event_times[0]))
                 cur_los_labels = los - sample_times
 
                 los_masks.append(cur_los_masks)
                 los_labels.append(cur_los_labels)
 
-                # create phenotyping
-                cur_phenotype_labels = [0 for i in range(len(id_to_group))]
+                # Create phenotype labels
+                cur_phenotype_labels = [0 for _ in range(len(id_to_group))]
                 icustay = label_df['Icustay'].iloc[0]
                 diagnoses_df = pd.read_csv(os.path.join(patient_folder, "diagnoses.csv"), dtype={"ICD9_CODE": str})
                 diagnoses_df = diagnoses_df[diagnoses_df.ICUSTAY_ID == icustay]
@@ -129,7 +145,7 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                                         if definitions[id_to_group[i]]['use_in_benchmark']]
                 phenotype_labels.append(cur_phenotype_labels)
 
-                # create decompensation
+                # Create decompensation data
                 stay = stays_df[stays_df.ICUSTAY_ID == icustay]
                 deathtime = stay['DEATHTIME'].iloc[0]
                 intime = stay['INTIME'].iloc[0]
@@ -140,7 +156,7 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                                   datetime.strptime(intime, "%Y-%m-%d %H:%M:%S")).total_seconds() / 3600.0
 
                 sample_times = np.arange(0.0, min(los, lived_time) + eps, sample_rate)
-                sample_times = np.array([int(x+eps) for x in sample_times])
+                sample_times = np.array([int(x + eps) for x in sample_times])
                 cur_decomp_masks = map(int, (sample_times > shortest_length) & (sample_times > event_times[0]))
                 cur_decomp_labels = [(mortality & int(lived_time - t < future_time_interval))
                                      for t in sample_times]
@@ -148,29 +164,37 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                 decomp_labels.append(cur_decomp_labels)
 
     def permute(arr, p):
+        """
+        Permutes a list based on a given permutation list.
+
+        Args:
+            arr (list): List to be permuted.
+            p (list): List of permutation indices.
+
+        Returns:
+            list: Permuted list.
+        """
         return [arr[index] for index in p]
 
     if partition == "train":
         perm = list(range(len(file_names)))
-        random.shuffle(perm)
+        random.shuffle(perm)  # Shuffle for training
     if partition == "test":
-        perm = list(np.argsort(file_names))
+        perm = list(np.argsort(file_names))  # Sort for testing
 
+    # Apply permutation to all lists
     file_names = permute(file_names, perm)
     loses = permute(loses, perm)
-
     ihm_masks = permute(ihm_masks, perm)
     ihm_labels = permute(ihm_labels, perm)
     ihm_positions = permute(ihm_positions, perm)
-
     los_masks = permute(los_masks, perm)
     los_labels = permute(los_labels, perm)
-
     phenotype_labels = permute(phenotype_labels, perm)
-
     decomp_masks = permute(decomp_masks, perm)
     decomp_labels = permute(decomp_labels, perm)
 
+    # Write the listfile with multi-task labels
     with open(os.path.join(output_dir, "listfile.csv"), "w") as listfile:
         header = ','.join(['filename', 'length of stay', 'in-hospital mortality task (pos;mask;label)',
                            'length of stay task (masks;labels)', 'phenotyping task (labels)',
@@ -185,7 +209,9 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
 
             ls1 = ";".join(map(str, los_masks[index]))
             ls2 = ";".join(map(lambda x: '{:.6f}'.format(x), los_labels[index]))
-            los_task = '{};{}'.format(ls1, ls2)
+            los_task = '{};{}'.format(ls1, ls2
+
+)
 
             pheno_task = ';'.join(map(str, phenotype_labels[index]))
 
@@ -197,6 +223,9 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
 
 
 def main():
+    """
+    Main function to set up command-line arguments and process both train and test partitions.
+    """
     parser = argparse.ArgumentParser(description="Create data for multitask prediction.")
     parser.add_argument('root_path', type=str, help="Path to root folder containing train and test sets.")
     parser.add_argument('output_path', type=str, help="Directory where the created data should be stored.")
@@ -206,7 +235,7 @@ def main():
     args, _ = parser.parse_known_args()
 
     with open(args.phenotype_definitions) as definitions_file:
-        definitions = yaml.load(definitions_file)
+        definitions = yaml.load(definitions_file, Loader=yaml.FullLoader)
 
     code_to_group = {}
     for group in definitions:

@@ -1,3 +1,4 @@
+
 from __future__ import absolute_import
 from __future__ import print_function
 
@@ -6,66 +7,73 @@ import argparse
 import pandas as pd
 from tqdm import tqdm
 
-
 def is_subject_folder(x):
+    """
+    Checks if a given directory name is a numeric subject folder.
+
+    Args:
+        x (str): Directory name.
+
+    Returns:
+        bool: True if the directory name is numeric, False otherwise.
+    """
     return str.isdigit(x)
 
-
 def main():
+    """
+    Processes and cleans event data for each subject. This script ensures consistency 
+    between 'events.csv' and 'stays.csv' files for each subject. It performs the following checks:
+    - Ensures no empty or duplicated IDs.
+    - Validates and attempts to recover missing stay IDs.
+    - Removes invalid events based on hospital admission and stay IDs.
 
-    n_events = 0                   # total number of events
-    empty_hadm = 0                 # hadm_id is empty in events.csv. We exclude such events.
-    no_hadm_in_stay = 0            # hadm_id does not appear in stays.csv. We exclude such events.
-    no_icustay = 0                 # stay_id is empty in events.csv. We try to fix such events.
-    recovered = 0                  # empty stay_ids are recovered according to stays.csv files (given hadm_id)
-    could_not_recover = 0          # empty stay_ids that are not recovered. This should be zero.
-    icustay_missing_in_stays = 0   # stay_id does not appear in stays.csv. We exclude such events.
+    Command line arguments:
+    - `subjects_root_path`: Directory containing subject subdirectories with 'stays.csv' and 'events.csv' files.
+    """
+    # Initialize counters for various data issues
+    n_events = 0                   # Total number of events processed
+    empty_hadm = 0                 # Number of events with empty hadm_id
+    no_hadm_in_stay = 0            # Number of events with hadm_id not in stays.csv
+    no_icustay = 0                 # Number of events with empty stay_id in events.csv
+    recovered = 0                  # Number of empty stay_ids recovered from stays.csv
+    could_not_recover = 0          # Number of empty stay_ids that could not be recovered
+    icustay_missing_in_stays = 0   # Number of events with stay_id not in stays.csv
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Process and clean event data for each subject.')
     parser.add_argument('subjects_root_path', type=str,
                         help='Directory containing subject subdirectories.')
     args = parser.parse_args()
     print(args)
 
+    # List subject directories and filter numeric ones
     subdirectories = os.listdir(args.subjects_root_path)
     subjects = list(filter(is_subject_folder, subdirectories))
 
     for subject in tqdm(subjects, desc='Iterating over subjects'):
         stays_df = pd.read_csv(os.path.join(args.subjects_root_path, subject, 'stays.csv'))
-        # , index_col=False,
-                            #    dtype={'hadm_id': str, "stay_id": str})
-        # stays_df.columns = stays_df.columns.str.upper()
-
-        # assert that there is no row with empty stay_id or hadm_id
+        
+        # Ensure no empty or duplicate stay_id or hadm_id in stays.csv
         assert(not stays_df['stay_id'].isnull().any())
         assert(not stays_df['hadm_id'].isnull().any())
-
-        # assert there are no repetitions of stay_id or hadm_id
-        # since admissions with multiple ICU stays were excluded
         assert(len(stays_df['stay_id'].unique()) == len(stays_df['stay_id']))
         assert(len(stays_df['hadm_id'].unique()) == len(stays_df['hadm_id']))
 
         events_df = pd.read_csv(os.path.join(args.subjects_root_path, subject, 'events.csv'))
-        # , index_col=False,
-                                # dtype={'hadm_id': str, "stay_id": str})
-        # events_df.columns = events_df.columns.str.upper()
         n_events += events_df.shape[0]
 
-        # we drop all events for them hadm_id is empty
-        # TODO: maybe we can recover hadm_id by looking at stay_id
+        # Drop events with empty hadm_id
         empty_hadm += events_df['hadm_id'].isnull().sum()
         events_df = events_df.dropna(subset=['hadm_id'])
 
+        # Merge events with stays to check for valid hadm_id and stay_id
         merged_df = events_df.merge(stays_df, left_on=['hadm_id'], right_on=['hadm_id'],
                                     how='left', suffixes=['', '_r'], indicator=True)
 
-        # we drop all events for which hadm_id is not listed in stays.csv
-        # since there is no way to know the targets of that stay (for example mortality)
+        # Drop events where hadm_id is not in stays.csv
         no_hadm_in_stay += (merged_df['_merge'] == 'left_only').sum()
         merged_df = merged_df[merged_df['_merge'] == 'both']
 
-        # if stay_id is empty in stays.csv, we try to recover it
-        # we exclude all events for which we could not recover stay_id
+        # Attempt to recover missing stay_id from stays.csv
         cur_no_icustay = merged_df['stay_id'].isnull().sum()
         no_icustay += cur_no_icustay
         merged_df.loc[:, 'stay_id'] = merged_df['stay_id'].fillna(merged_df['stay_id_r'])
@@ -73,15 +81,15 @@ def main():
         could_not_recover += merged_df['stay_id'].isnull().sum()
         merged_df = merged_df.dropna(subset=['stay_id'])
 
-        # now we take a look at the case when stay_id is present in events.csv, but not in stays.csv
-        # this mean that stay_id in events.csv is not the same as that of stays.csv for the same hadm_id
-        # we drop all such events
+        # Drop events where stay_id does not match stays.csv
         icustay_missing_in_stays += (merged_df['stay_id'] != merged_df['stay_id_r']).sum()
         merged_df = merged_df[(merged_df['stay_id'] == merged_df['stay_id_r'])]
 
+        # Write cleaned events to output CSV
         to_write = merged_df[['subject_id', 'hadm_id', 'stay_id', 'charttime', 'itemid', 'value', 'valuenum']]
         to_write.to_csv(os.path.join(args.subjects_root_path, subject, 'events.csv'), index=False)
 
+    # Output summary of data issues
     assert(could_not_recover == 0)
     print('n_events: {}'.format(n_events))
     print('empty_hadm: {}'.format(empty_hadm))
@@ -90,7 +98,6 @@ def main():
     print('recovered: {}'.format(recovered))
     print('could_not_recover: {}'.format(could_not_recover))
     print('icustay_missing_in_stays: {}'.format(icustay_missing_in_stays))
-
 
 if __name__ == "__main__":
     main()

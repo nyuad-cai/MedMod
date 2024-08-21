@@ -6,17 +6,33 @@ import argparse
 import pandas as pd
 import yaml
 import random
-random.seed(49297)
+random.seed(49297)  # Set seed for reproducibility
 from tqdm import tqdm
 
 
 def process_partition(args, definitions, code_to_group, id_to_group, group_to_id,
                       partition, eps=1e-6):
+    """
+    Process a specific data partition (train or test) to create data for phenotype classification.
+
+    Args:
+        args (argparse.Namespace): Command-line arguments containing paths for root and output directories.
+        definitions (dict): Phenotype definitions from YAML file.
+        code_to_group (dict): Mapping from ICD codes to phenotype groups.
+        id_to_group (list): List of phenotype group IDs.
+        group_to_id (dict): Mapping from phenotype groups to their IDs.
+        partition (str): The data partition to process ('train' or 'test').
+        eps (float): Small epsilon value to handle edge cases in time comparisons.
+
+    Outputs:
+        Creates a CSV file for each partition containing filenames, length of stay, stay IDs, and phenotype labels.
+    """
     output_dir = os.path.join(args.output_path, partition)
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    xty_triples = []
+    xty_triples = []  # List to store tuples of (filename, length of stay, stay ID, labels)
+
     patients = list(filter(str.isdigit, os.listdir(os.path.join(args.root_path, partition))))
     for patient in tqdm(patients, desc='Iterating over patients in {}'.format(partition)):
         patient_folder = os.path.join(args.root_path, partition, patient)
@@ -27,15 +43,17 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                 lb_filename = ts_filename.replace("_timeseries", "")
                 label_df = pd.read_csv(os.path.join(patient_folder, lb_filename))
 
-                # empty label file
+                # Skip if the label file is empty
                 if label_df.shape[0] == 0:
                     continue
 
+                # Calculate length of stay
                 los = 24.0 * label_df.iloc[0]['Length of Stay']  # in hours
                 if pd.isnull(los):
                     print("\n\t(length of stay is missing)", patient, ts_filename)
                     continue
 
+                # Read and filter time-series data
                 ts_lines = tsfile.readlines()
                 header = ts_lines[0]
                 ts_lines = ts_lines[1:]
@@ -44,18 +62,20 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                 ts_lines = [line for (line, t) in zip(ts_lines, event_times)
                             if -eps < t < los + eps]
 
-                # no measurements in ICU
+                # Skip if no measurements in ICU
                 if len(ts_lines) == 0:
                     print("\n\t(no events in ICU) ", patient, ts_filename)
                     continue
 
+                # Write filtered time-series data
                 output_ts_filename = patient + "_" + ts_filename
                 with open(os.path.join(output_dir, output_ts_filename), "w") as outfile:
                     outfile.write(header)
                     for line in ts_lines:
                         outfile.write(line)
 
-                cur_labels = [0 for i in range(len(id_to_group))]
+                # Create labels for the current file
+                cur_labels = [0 for _ in range(len(id_to_group))]
 
                 icustay = label_df['Icustay'].iloc[0]
                 diagnoses_df = pd.read_csv(os.path.join(patient_folder, "diagnoses.csv"),
@@ -70,23 +90,28 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
                             cur_labels[group_id] = 1
                         else:
                             print(f'{code} code not found')    
-                # import pdb; pdb.set_trace()
+
+                # Filter labels based on definitions
                 cur_labels = [x for (i, x) in enumerate(cur_labels)
                               if definitions[id_to_group[i]]['use_in_benchmark']]
 
+                # Append the tuple to xty_triples
                 xty_triples.append((output_ts_filename, los, icustay, cur_labels))
     
-
     print("Number of created samples:", len(xty_triples))
+    
+    # Shuffle or sort based on partition type
     if partition == "train":
         random.shuffle(xty_triples)
-    if partition == "train":
+    elif partition == "test":
         xty_triples = sorted(xty_triples)
 
+    # Prepare header for the listfile
     codes_in_benchmark = [x for x in id_to_group
                           if definitions[x]['use_in_benchmark']]
-
     listfile_header = "stay,period_length,stay_id," + ",".join(codes_in_benchmark)
+
+    # Write listfile with multi-task labels
     with open(os.path.join(output_dir, "listfile.csv"), "w") as listfile:
         listfile.write(listfile_header + "\n")
         for (x, t, stay_id, y) in xty_triples:
@@ -95,6 +120,9 @@ def process_partition(args, definitions, code_to_group, id_to_group, group_to_id
 
 
 def main():
+    """
+    Main function to set up command-line arguments and process both train and test partitions.
+    """
     parser = argparse.ArgumentParser(description="Create data for phenotype classification task.")
     parser.add_argument('root_path', type=str, help="Path to root folder containing train and test sets.")
     parser.add_argument('output_path', type=str, help="Directory where the created data should be stored.")
@@ -104,11 +132,9 @@ def main():
     args, _ = parser.parse_known_args()
 
     with open(args.phenotype_definitions) as definitions_file:
-        definitions = yaml.load(definitions_file)
+        definitions = yaml.load(definitions_file, Loader=yaml.FullLoader)
 
     code_to_group = {}
-
-   
     for group in definitions:
         codes = definitions[group]['codes']
         for code in codes:
@@ -118,9 +144,6 @@ def main():
                 print(f'code, {code}')
                 assert code_to_group[code] == group
 
-    # import pdb;pdb.set_trace()
-    # ['Diabetes mellitus with complication', ]
-    # 'ICD-10-CM CODE' 'Default CCSR CATEGORY DESCRIPTION IP'
     id_to_group = sorted(definitions.keys())
     group_to_id = dict((x, i) for (i, x) in enumerate(id_to_group))
 

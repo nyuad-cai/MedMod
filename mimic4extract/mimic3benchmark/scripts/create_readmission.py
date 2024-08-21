@@ -5,17 +5,30 @@ import os
 import argparse
 import pandas as pd
 import random
-random.seed(49297)
+random.seed(49297)  # Set seed for reproducibility
 from tqdm import tqdm
 from datetime import datetime, timedelta
 
 
-def process_partition(args, partition, eps=1e-6, time_limit = 30):
+def process_partition(args, partition, eps=1e-6, time_limit=30):
+    """
+    Process a specific data partition (train or test) to create data for re-admission prediction.
+
+    Args:
+        args (argparse.Namespace): Command-line arguments containing paths for root and output directories.
+        partition (str): The data partition to process ('train' or 'test').
+        eps (float): Small epsilon value to handle edge cases in time comparisons.
+        time_limit (int): Number of days after which a patient is considered not to be readmitted.
+
+    Outputs:
+        Creates a CSV file for each partition containing filenames, length of stay, stay IDs, and readmission labels.
+    """
     output_dir = os.path.join(args.output_path, partition)
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
 
-    xy_pairs = []
+    xy_pairs = []  # List to store tuples of (filename, length of stay, stay ID, readmission label)
+
     patients = list(filter(str.isdigit, os.listdir(os.path.join(args.root_path, partition))))
     for patient in tqdm(patients, desc='Iterating over patients in {}'.format(partition)):
         patient_folder = os.path.join(args.root_path, partition, patient)
@@ -26,23 +39,25 @@ def process_partition(args, partition, eps=1e-6, time_limit = 30):
                 lb_filename = ts_filename.replace("_timeseries", "")
                 label_df = pd.read_csv(os.path.join(patient_folder, lb_filename))
                 stay_filename = 'stays.csv'
-                stay_df = pd.read_csv(os.path.join(patient_folder, stay_filename ))
+                stay_df = pd.read_csv(os.path.join(patient_folder, stay_filename))
                 stay_df['intime'] = pd.to_datetime(stay_df['intime'], format='%Y-%m-%d %H:%M:%S')
                 stay_df = stay_df.sort_values(by='intime')
 
-                # empty label file
+                # Skip if the label file is empty
                 if label_df.shape[0] == 0:
                     continue
                 
                 icustay = label_df['Icustay'].iloc[0]
-                # get the current stay row 
-                curr_stay = stay_df.loc[stay_df['stay_id']==icustay]
+                # Get the current stay row 
+                curr_stay = stay_df.loc[stay_df['stay_id'] == icustay]
                 
+                # Calculate length of stay
                 los = 24.0 * label_df.iloc[0]['Length of Stay']  # in hours
                 if pd.isnull(los):
                     print("\n\t(length of stay is missing)", patient, ts_filename)
                     continue
 
+                # Read and filter time-series data
                 ts_lines = tsfile.readlines()
                 header = ts_lines[0]
                 ts_lines = ts_lines[1:]
@@ -52,53 +67,59 @@ def process_partition(args, partition, eps=1e-6, time_limit = 30):
                             if -eps < t < los + eps]
                             
 
-                # no measurements in ICU
+                # Skip if no measurements in ICU
                 if len(ts_lines) == 0:
                     print("\n\t(no events in ICU) ", patient, ts_filename)
                     continue
 
+                # Write filtered time-series data
                 output_ts_filename = patient + "_" + ts_filename
                 with open(os.path.join(output_dir, output_ts_filename), "w") as outfile:
                     outfile.write(header)
                     for line in ts_lines:
                         outfile.write(line)
                 
-                # if there is only one stay, we automatically assign the label 
+                # Determine readmission label
                 if stay_df.shape[0] == 1:
+                    # If there's only one stay, we automatically assign readmission label 0
                     readmit = 0
-                # if this is the last stay, we automatically assign the labal
-                if stay_df.shape[0] == curr_stay.index[0] + 1:
-                    readmit = 0 
-                # else if there are multiple stays, and this is not the last one  
+                elif stay_df.shape[0] == curr_stay.index[0] + 1:
+                    # If this is the last stay, we automatically assign readmission label 0
+                    readmit = 0
                 else:
-                    # get the outime of the current stay, and add 30 days to get the cutoff date 
+                    # Calculate readmission based on the next stay's intime
                     out_time = curr_stay['outtime'].tolist()[0]
                     date_format = "%Y-%m-%d %H:%M:%S"
                     date_time = datetime.strptime(out_time, date_format)
-                    end_time = date_time + timedelta(days = 30)
-                    # get the intime of the next stay
-                    intime = stay_df['intime'].loc[curr_stay.index[0]+1]
-                    # compare the two and assign the label accordingly 
-                    if (intime<end_time):
+                    end_time = date_time + timedelta(days=time_limit)
+                    intime = stay_df['intime'].loc[curr_stay.index[0] + 1]
+                    if intime < end_time:
                         readmit = 1
                     else:
-                        readmit = 0 
+                        readmit = 0
 
+                # Append the tuple to xy_pairs
                 xy_pairs.append((output_ts_filename, los, icustay, readmit))
 
     print("Number of created samples:", len(xy_pairs))
+    
+    # Shuffle or sort based on partition type
     if partition == "train":
         random.shuffle(xy_pairs)
-    if partition == "test":
+    elif partition == "test":
         xy_pairs = sorted(xy_pairs)
 
+    # Prepare and write the listfile
     with open(os.path.join(output_dir, "listfile.csv"), "w") as listfile:
         listfile.write('stay,period_length,stay_id,y_true\n')
         for (x, t, icustay, y) in xy_pairs:
-            listfile.write('{},0,{},{:d}\n'.format(x, icustay, y))
+            listfile.write('{},0,{},{:d}\n'.format(x, t, icustay, y))
 
 
 def main():
+    """
+    Main function to set up command-line arguments and process both train and test partitions.
+    """
     parser = argparse.ArgumentParser(description="Create data for re-admission prediction task.")
     parser.add_argument('root_path', type=str, help="Path to root folder containing train and test sets.")
     parser.add_argument('output_path', type=str, help="Directory where the created data should be stored.")
