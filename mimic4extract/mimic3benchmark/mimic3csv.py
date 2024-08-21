@@ -173,76 +173,160 @@ def add_age_to_icustays(stays):
     stays.loc[stays.age < 0, 'age'] = 90  # Set negative ages to 90 (age estimation for patients > 89 years)
     return stays  # Return the updated DataFrame
 
-# ----------------------------------------------
 def add_inhospital_mortality_to_icustays(stays):
-
+    """Add a column to the stays DataFrame indicating in-hospital mortality.
+    
+    Mortality is determined by checking if death occurred between admission and discharge, 
+    or between admission and death time if death time is available.
+    
+    Args:
+        stays: DataFrame containing stay records with columns for admission, discharge, death times.
+    
+    Returns:
+        Updated DataFrame with a 'mortality' column indicating in-hospital mortality.
+    """
+    # Check if death occurred within the stay period or at any point during the hospital admission
     mortality = stays.dod.notnull() & ((stays.admittime <= stays.dod) & (stays.dischtime >= stays.dod))
     mortality = mortality | (stays.deathtime.notnull() & ((stays.admittime <= stays.deathtime) & (stays.dischtime >= stays.deathtime)))
-    stays['mortality'] = mortality.astype(int)
-    stays['mortality_inhospital'] = stays['mortality']
-    # INHOSPITAL
+    
+    stays['mortality'] = mortality.astype(int)  # Add a column for mortality
+    stays['mortality_inhospital'] = stays['mortality']  # Redundant column for in-hospital mortality
+    
     return stays
 
 
 def add_inunit_mortality_to_icustays(stays):
-
+    """Add a column to the stays DataFrame indicating in-unit mortality.
+    
+    Mortality is determined by checking if death occurred between ICU stay admission and discharge.
+    
+    Args:
+        stays: DataFrame containing ICU stay records with columns for admission, discharge, death times.
+    
+    Returns:
+        Updated DataFrame with a 'mortality_inunit' column indicating in-unit mortality.
+    """
+    # Check if death occurred within the ICU stay period
     mortality = stays.dod.notnull() & ((stays.intime <= stays.dod) & (stays.outtime >= stays.dod))
     mortality = mortality | (stays.deathtime.notnull() & ((stays.intime <= stays.deathtime) & (stays.outtime >= stays.deathtime)))
-    stays['mortality_inunit'] = mortality.astype(int)
-    # mortality_INUNIT
+    
+    stays['mortality_inunit'] = mortality.astype(int)  # Add a column for in-unit mortality
+    
     return stays
 
 
 def filter_admissions_on_nb_icustays(stays, min_nb_stays=1, max_nb_stays=1):
-
+    """Filter admissions based on the number of ICU stays.
+    
+    Args:
+        stays: DataFrame containing stay records.
+        min_nb_stays: Minimum number of ICU stays required for an admission to be kept.
+        max_nb_stays: Maximum number of ICU stays allowed for an admission to be kept.
+    
+    Returns:
+        Filtered DataFrame with admissions having a number of stays within the specified range.
+    """
     to_keep = stays.groupby('hadm_id').count()[['stay_id']].reset_index()
     to_keep = to_keep[(to_keep.stay_id >= min_nb_stays) & (to_keep.stay_id <= max_nb_stays)][['hadm_id']]
+    
     stays = stays.merge(to_keep, how='inner', left_on='hadm_id', right_on='hadm_id')
+    
     return stays
 
 
 def filter_icustays_on_age(stays, min_age=18, max_age=np.inf):
-
+    """Filter ICU stays based on the patient's age.
+    
+    Args:
+        stays: DataFrame containing ICU stay records with age information.
+        min_age: Minimum age of the patients to keep.
+        max_age: Maximum age of the patients to keep.
+    
+    Returns:
+        Filtered DataFrame with stays for patients within the specified age range.
+    """
     stays = stays[(stays.age >= min_age) & (stays.age <= max_age)]
+    
     return stays
 
-    # import pdb; pdb.set_trace()
 
 def filter_diagnoses_on_stays(diagnoses, stays):
+    """Filter diagnoses to keep only those associated with stays.
+    
+    Args:
+        diagnoses: DataFrame containing diagnoses records.
+        stays: DataFrame containing stay records with identifiers for matching.
+    
+    Returns:
+        Filtered DataFrame with diagnoses linked to the stays.
+    """
     return diagnoses.merge(stays[['subject_id', 'hadm_id', 'stay_id']].drop_duplicates(), how='inner',
                            left_on=['subject_id', 'hadm_id'], right_on=['subject_id', 'hadm_id'])
 
 
 def break_up_stays_by_subject(stays, output_path, subjects=None):
+    """Break up stays DataFrame by subject and save each subject's data to separate files.
+    
+    Args:
+        stays: DataFrame containing stay records.
+        output_path: Directory path where subject-specific data will be saved.
+        subjects: List of subject IDs to process; if None, all subjects are processed.
+    
+    Returns:
+        None
+    """
     subjects = stays.subject_id.unique() if subjects is None else subjects
     nb_subjects = subjects.shape[0]
+    
     for subject_id in tqdm(subjects, total=nb_subjects, desc='Breaking up stays by subjects'):
         dn = os.path.join(output_path, str(subject_id))
         try:
             os.makedirs(dn)
-        except:
+        except FileExistsError:
             pass
-
-        stays[stays.subject_id == subject_id].sort_values(by='intime').to_csv(os.path.join(dn, 'stays.csv'),
-                                                                              index=False)
+        
+        stays[stays.subject_id == subject_id].sort_values(by='intime').to_csv(os.path.join(dn, 'stays.csv'), index=False)
 
 
 def break_up_diagnoses_by_subject(diagnoses, output_path, subjects=None):
+    """Break up diagnoses DataFrame by subject and save each subject's data to separate files.
+    
+    Args:
+        diagnoses: DataFrame containing diagnoses records.
+        output_path: Directory path where subject-specific data will be saved.
+        subjects: List of subject IDs to process; if None, all subjects are processed.
+    
+    Returns:
+        None
+    """
     subjects = diagnoses.subject_id.unique() if subjects is None else subjects
     nb_subjects = subjects.shape[0]
+    
     for subject_id in tqdm(subjects, total=nb_subjects, desc='Breaking up diagnoses by subjects'):
         dn = os.path.join(output_path, str(subject_id))
         try:
             os.makedirs(dn)
-        except:
+        except FileExistsError:
             pass
-
+        
         diagnoses[diagnoses.subject_id == subject_id].sort_values(by=['stay_id', 'seq_num'])\
                                                      .to_csv(os.path.join(dn, 'diagnoses.csv'), index=False)
 
 
 def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
                                               items_to_keep=None, subjects_to_keep=None):
+    """Read an events table, filter and break up by subject, and save to separate files.
+    
+    Args:
+        mimic3_path: Path to the directory containing MIMIC-III data files.
+        table: Name of the events table to process (e.g., 'chartevents', 'labevents', 'outputevents').
+        output_path: Directory path where subject-specific data will be saved.
+        items_to_keep: List of item IDs to keep; if None, all items are processed.
+        subjects_to_keep: List of subject IDs to keep; if None, all subjects are processed.
+    
+    Returns:
+        None
+    """
     obs_header = ['subject_id', 'hadm_id', 'stay_id', 'charttime', 'itemid', 'value', 'valuenum']
     if items_to_keep is not None:
         items_to_keep = set([str(s) for s in items_to_keep])
@@ -257,26 +341,27 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
     data_stats = DataStats()
 
     def write_current_observations():
+        """Write accumulated observations for the current subject to a CSV file."""
         dn = os.path.join(output_path, str(data_stats.curr_subject_id))
         try:
             os.makedirs(dn)
-        except:
+        except FileExistsError:
             pass
         fn = os.path.join(dn, 'events.csv')
         if not os.path.exists(fn) or not os.path.isfile(fn):
-            f = open(fn, 'w')
-            f.write(','.join(obs_header) + '\n')
-            f.close()
-        w = csv.DictWriter(open(fn, 'a'), fieldnames=obs_header, quoting=csv.QUOTE_MINIMAL)
-        w.writerows(data_stats.curr_obs)
+            with open(fn, 'w') as f:
+                f.write(','.join(obs_header) + '\n')
+        with open(fn, 'a') as f:
+            w = csv.DictWriter(f, fieldnames=obs_header, quoting=csv.QUOTE_MINIMAL)
+            w.writerows(data_stats.curr_obs)
         data_stats.curr_obs = []
 
-    # nb_rows_dict = {'chartevents': 330712484, 'labevents': 27854056, 'outputevents': 4349219}
+    # Dictionary with number of rows for each table (adjust as necessary)
     nb_rows_dict = {'chartevents': 329499788, 'labevents': 122103667, 'outputevents': 4457381}
     
     nb_rows = nb_rows_dict[table.lower()]
-    # import pdb;pdb.set_trace()
 
+    # Process each row of the table
     for row, row_no, _ in tqdm(read_events_table_by_row(mimic3_path, table), total=nb_rows,
                                                         desc='Processing {} table'.format(table)):
 
@@ -285,15 +370,13 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
         if (items_to_keep is not None) and (row['itemid'] not in items_to_keep):
             continue
         
-        # import pdb; pdb.set_trace()
-        # value = row['valueuom'] if table=='OUTPUTEVENTS' else row['valuenum']
         row_out = {'subject_id': row['subject_id'],
                    'hadm_id': row['hadm_id'],
                    'stay_id': '' if 'stay_id' not in row else row['stay_id'],
                    'charttime': row['charttime'],
                    'itemid': row['itemid'],
                    'value': row['value'],
-                   'valuenum': row['valueuom'] if table=='OUTPUTEVENTS' else row['valuenum']}
+                   'valuenum': row['valueuom'] if table == 'OUTPUTEVENTS' else row['valuenum']}
         if data_stats.curr_subject_id != '' and data_stats.curr_subject_id != row['subject_id']:
             write_current_observations()
         data_stats.curr_obs.append(row_out)

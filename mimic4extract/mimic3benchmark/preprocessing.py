@@ -341,47 +341,75 @@ def clean_o2sat(df):
     v.loc[idx] = v[idx] * 100.
     return v
 
-# -----------------------------------------------
-# Temperature: map Farenheit to Celsius, some ambiguous 50<x<80
+# Temperature: map Fahrenheit to Celsius, handle ambiguous values in range 50<x<80
 def clean_temperature(df):
-    v = df.value.astype(float).copy()
-    idx = df.valuenum.fillna('').apply(lambda s: 'F' in s.lower()) | df.mimic_label.apply(lambda s: 'F' in s.lower()) | (v >= 79)
+    """Convert temperature values from Fahrenheit to Celsius and handle ambiguous values.
+    Args:
+        df: DataFrame containing temperature data.
+    Returns:
+        A Series of temperature values in Celsius.
+    """
+    v = df.value.astype(float).copy()  # Copy the 'value' column as float for processing
+    
+    # Identify rows where temperature values are in Fahrenheit or ambiguous
+    idx = df.valuenum.fillna('').apply(lambda s: 'F' in s.lower()) | \
+          df.mimic_label.apply(lambda s: 'F' in s.lower()) | \
+          (v >= 79)
+    
+    # Convert Fahrenheit to Celsius for identified rows
     v.loc[idx] = (v[idx] - 32) * 5. / 9
+    
     return v
 
-
-# Weight: some really light/heavy adults: <50 lb, >450 lb, ambiguous oz/lb
-# Children are tough for height, weight
+# Weight: handle values in ounces and pounds, convert to kilograms
+# Address ambiguous cases for adults and children
 def clean_weight(df):
-    v = df.value.astype(float).copy()
-    # ounces
-    idx = df.valuenum.fillna('').apply(lambda s: 'oz' in s.lower()) | df.mimic_label.apply(lambda s: 'oz' in s.lower())
+    """Convert weight values from ounces/pounds to kilograms.
+    Args:
+        df: DataFrame containing weight data.
+    Returns:
+        A Series of weight values in kilograms.
+    """
+    v = df.value.astype(float).copy()  # Copy the 'value' column as float for processing
+    
+    # Identify rows where weight values are in ounces
+    idx = df.valuenum.fillna('').apply(lambda s: 'oz' in s.lower()) | \
+          df.mimic_label.apply(lambda s: 'oz' in s.lower())
+    
+    # Convert ounces to pounds
     v.loc[idx] = v[idx] / 16.
-    # pounds
-    idx = idx | df.valuenum.fillna('').apply(lambda s: 'lb' in s.lower()) | df.mimic_label.apply(lambda s: 'lb' in s.lower())
+    
+    # Identify rows where weight values are in pounds
+    idx = idx | df.valuenum.fillna('').apply(lambda s: 'lb' in s.lower()) | \
+          df.mimic_label.apply(lambda s: 'lb' in s.lower())
+    
+    # Convert pounds to kilograms
     v.loc[idx] = v[idx] * 0.453592
+    
     return v
 
-
-# Height: some really short/tall adults: <2 ft, >7 ft)
-# Children are tough for height, weight
+# Height: convert height values from inches to centimeters, handle ambiguous values
+# Address cases for adults and children
 def clean_height(df):
-    v = df.value.astype(float).copy()
-    idx = df.valuenum.fillna('').apply(lambda s: 'in' in s.lower()) | df.mimic_label.apply(lambda s: 'in' in s.lower())
+    """Convert height values from inches to centimeters.
+    Args:
+        df: DataFrame containing height data.
+    Returns:
+        A Series of height values in centimeters.
+    """
+    v = df.value.astype(float).copy()  # Copy the 'value' column as float for processing
+    
+    # Identify rows where height values are in inches
+    idx = df.valuenum.fillna('').apply(lambda s: 'in' in s.lower()) | \
+          df.mimic_label.apply(lambda s: 'in' in s.lower())
+    
+    # Convert inches to centimeters
     v.loc[idx] = np.round(v[idx] * 2.54)
+    
     return v
 
 
-# ETCO2: haven't found yet
-# Urine output: ambiguous units (raw ccs, ccs/kg/hr, 24-hr, etc.)
-# Tidal volume: tried to substitute for ETCO2 but units are ambiguous
-# Glascow coma scale eye opening
-# Glascow coma scale motor response
-# Glascow coma scale total
-# Glascow coma scale verbal response
-# Heart Rate
-# Respiratory rate
-# Mean blood pressure
+# Dictionary mapping variable names to their cleaning functions
 clean_fns = {
     'Capillary refill rate': clean_crr,
     'Diastolic blood pressure': clean_dbp,
@@ -395,18 +423,29 @@ clean_fns = {
     'Height': clean_height
 }
 
-
 def clean_events(events):
+    """Apply cleaning functions to events based on their variable name.
+    Args:
+        events: DataFrame containing event data with variables to be cleaned.
+    Returns:
+        A cleaned DataFrame with non-null values.
+    """
     global clean_fns
+    
+    # Apply each cleaning function to the relevant rows based on variable names
     for var_name, clean_fn in clean_fns.items():
-        idx = (events.variable == var_name)
+        idx = (events.variable == var_name)  # Identify rows matching the variable name
         try:
+            # Apply cleaning function to the identified rows
             events.loc[idx, 'value'] = clean_fn(events[idx])
         except Exception as e:
+            # Print traceback and exit if an exception occurs during cleaning
             import traceback
             print("Exception in clean_events:", clean_fn.__name__, e)
             print(traceback.format_exc())
             print("number of rows:", np.sum(idx))
             print("values:", events[idx])
             exit()
+    
+    # Return DataFrame with non-null values
     return events.loc[events.value.notnull()]
