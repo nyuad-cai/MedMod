@@ -9,95 +9,171 @@ from tqdm import tqdm
 
 from mimic3benchmark.util import dataframe_from_csv
 
-
 def read_patients_table(path):
-    pats = pd.read_csv(path)#dataframe_from_csv(path)  
-    columns = ['subject_id', 'gender', 'anchor_age', 'dod']  
-    pats = pats[columns]
+    """Read and process the patients table.
 
-    # pats = pats[columns]
-    pats.dod = pd.to_datetime(pats.dod)
-    return pats
+    Args:
+        path (str): File path to the CSV file containing patient data.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns ['subject_id', 'gender', 'anchor_age', 'dod'].
+                      'dod' (date of death) is converted to datetime format.
+    """
+    pats = pd.read_csv(path)  # Read the CSV file into a DataFrame
+    columns = ['subject_id', 'gender', 'anchor_age', 'dod']  # Columns to keep
+    pats = pats[columns]  # Filter DataFrame to include only the specified columns
+    pats.dod = pd.to_datetime(pats.dod)  # Convert 'dod' column to datetime format
+    return pats  # Return the processed DataFrame
 
 
 def read_admissions_table(path):
+    """Read and process the admissions table.
 
-    # admits = dataframe_from_csv(path)
-    admits = pd.read_csv(path) #header=header, index_col=index_col
-    admits = admits[['subject_id', 'hadm_id', 'admittime', 'dischtime', 'deathtime', 'ethnicity']] # missing DIAGNOSIS
-    admits.admittime = pd.to_datetime(admits.admittime)
-    admits.dischtime = pd.to_datetime(admits.dischtime)
-    admits.deathtime = pd.to_datetime(admits.deathtime)
-    return admits
+    Args:
+        path (str): File path to the CSV file containing admissions data.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns ['subject_id', 'hadm_id', 'admittime', 
+                      'dischtime', 'deathtime', 'ethnicity']. All time-related columns
+                      are converted to datetime format.
+    """
+    admits = pd.read_csv(path)  # Read the CSV file into a DataFrame
+    admits = admits[['subject_id', 'hadm_id', 'admittime', 'dischtime', 'deathtime', 'ethnicity']]  # Select relevant columns
+    admits.admittime = pd.to_datetime(admits.admittime)  # Convert 'admittime' to datetime
+    admits.dischtime = pd.to_datetime(admits.dischtime)  # Convert 'dischtime' to datetime
+    admits.deathtime = pd.to_datetime(admits.deathtime)  # Convert 'deathtime' to datetime
+    return admits  # Return the processed DataFrame
 
 
 def read_icustays_table(path):
-    stays = pd.read_csv(path)#dataframe_from_csv(os.path.join(mimic3_path, 'ICUSTAYS.csv'))
-    
-    stays.intime = pd.to_datetime(stays.intime)
-    stays.outtime = pd.to_datetime(stays.outtime)
-    return stays
+    """Read and process the ICU stays table.
+
+    Args:
+        path (str): File path to the CSV file containing ICU stays data.
+
+    Returns:
+        pd.DataFrame: DataFrame with ICU stay data where 'intime' and 'outtime'
+                      columns are converted to datetime format.
+    """
+    stays = pd.read_csv(path)  # Read the CSV file into a DataFrame
+    stays.intime = pd.to_datetime(stays.intime)  # Convert 'intime' to datetime
+    stays.outtime = pd.to_datetime(stays.outtime)  # Convert 'outtime' to datetime
+    return stays  # Return the processed DataFrame
 
 
 def read_icd_diagnoses_table(path):
+    """Read and process the ICD diagnoses table.
 
-    codes = pd.read_csv(f'{path}/d_icd_diagnoses.csv')
-    # dataframe_from_csv(os.path.join(mimic3_path, 'D_ICD_DIAGNOSES.csv'))
-    codes = codes[['icd_code', 'long_title']]
-    diagnoses = pd.read_csv(f'{path}/diagnoses_icd.csv')
-    diagnoses = diagnoses.merge(codes, how='inner', left_on='icd_code', right_on='icd_code')
-    diagnoses[['subject_id', 'hadm_id', 'seq_num']] = diagnoses[['subject_id', 'hadm_id', 'seq_num']].astype(int)
-    return diagnoses
+    Args:
+        path (str): Directory path containing 'd_icd_diagnoses.csv' and 'diagnoses_icd.csv'.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame of diagnosis codes and their descriptions,
+                      along with patient-specific diagnosis information.
+    """
+    codes = pd.read_csv(f'{path}/d_icd_diagnoses.csv')  # Read ICD code descriptions
+    codes = codes[['icd_code', 'long_title']]  # Keep relevant columns
+    diagnoses = pd.read_csv(f'{path}/diagnoses_icd.csv')  # Read patient diagnoses data
+    diagnoses = diagnoses.merge(codes, how='inner', left_on='icd_code', right_on='icd_code')  # Merge on 'icd_code'
+    diagnoses[['subject_id', 'hadm_id', 'seq_num']] = diagnoses[['subject_id', 'hadm_id', 'seq_num']].astype(int)  # Ensure integer types
+    return diagnoses  # Return the processed DataFrame
 
 
 def read_events_table_by_row(mimic3_path, table):
-    nb_rows = {'chartevents': 329499788, 'labevents': 122103667, 'outputevents': 4457381}
-    csv_files = {'chartevents': 'icu/chartevents.csv', 'labevents': 'hosp/labevents.csv', 'outputevents': 'icu/outputevents.csv'}
-    # nb_rows = {'chartevents': 330712484, 'labevents': 27854056, 'outputevents': 4349219}
-    reader = csv.DictReader(open(os.path.join(mimic3_path, csv_files[table.lower()]), 'r'))
+    """Generator function to read events table row by row.
+
+    Args:
+        mimic3_path (str): Base directory path to the MIMIC-III dataset.
+        table (str): Name of the table to read ('chartevents', 'labevents', 'outputevents').
+
+    Yields:
+        tuple: A tuple containing the row (dict), row number (int), and total number of rows (int).
+    """
+    nb_rows = {'chartevents': 329499788, 'labevents': 122103667, 'outputevents': 4457381}  # Row counts for each table
+    csv_files = {'chartevents': 'icu/chartevents.csv', 'labevents': 'hosp/labevents.csv', 'outputevents': 'icu/outputevents.csv'}  # File paths
+    reader = csv.DictReader(open(os.path.join(mimic3_path, csv_files[table.lower()]), 'r'))  # CSV reader
+
     for i, row in enumerate(reader):
-        if 'stay_id' not in row:
-            row['stay_id'] = ''
-        yield row, i, nb_rows[table.lower()]
+        if 'stay_id' not in row:  # Check if 'stay_id' is missing in the row
+            row['stay_id'] = ''  # Assign an empty string if missing
+        yield row, i, nb_rows[table.lower()]  # Yield the row, index, and total number of rows
 
 
 def count_icd_codes(diagnoses, output_path=None):
+    """Count the occurrence of each ICD code.
 
-    codes = diagnoses[['icd_code', 'long_title']].drop_duplicates().set_index('icd_code')
-    codes['COUNT'] = diagnoses.groupby('icd_code')['stay_id'].count()
-    codes.COUNT = codes.COUNT.fillna(0).astype(int)
-    
-    codes = codes[codes.COUNT > 0]
-    if output_path:
-        codes.to_csv(output_path, index_label='icd_code')
-    return codes.sort_values('COUNT', ascending=False).reset_index()
+    Args:
+        diagnoses (pd.DataFrame): DataFrame containing ICD diagnoses data.
+        output_path (str, optional): If provided, the results will be saved to a CSV file.
 
-    # import pdb; pdb.set_trace()
+    Returns:
+        pd.DataFrame: DataFrame with ICD codes, their descriptions, and their count, 
+                      sorted by the count in descending order.
+    """
+    codes = diagnoses[['icd_code', 'long_title']].drop_duplicates().set_index('icd_code')  # Remove duplicates and set 'icd_code' as index
+    codes['COUNT'] = diagnoses.groupby('icd_code')['stay_id'].count()  # Count occurrences of each ICD code
+    codes.COUNT = codes.COUNT.fillna(0).astype(int)  # Fill missing counts with 0 and convert to integer
+    codes = codes[codes.COUNT > 0]  # Filter out codes with zero count
+
+    if output_path:  # If an output path is provided
+        codes.to_csv(output_path, index_label='icd_code')  # Save the results to a CSV file
+
+    return codes.sort_values('COUNT', ascending=False).reset_index()  # Return the sorted DataFrame
+
 
 def remove_icustays_with_transfers(stays):
-    # (stays.FIRST_WARDID == stays.LAST_WARDID) & missing from mimic 4
-    stays = stays[ (stays.first_careunit == stays.last_careunit)]
-    # DBSOURCE missing 
-    return stays[['subject_id', 'hadm_id', 'stay_id', 'last_careunit', 'intime', 'outtime', 'los']]
+    """Remove ICU stays with patient transfers between care units.
+
+    Args:
+        stays (pd.DataFrame): DataFrame containing ICU stays data.
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame where stays with transfers are removed.
+    """
+    stays = stays[(stays.first_careunit == stays.last_careunit)]  # Keep stays where first and last care units are the same
+    return stays[['subject_id', 'hadm_id', 'stay_id', 'last_careunit', 'intime', 'outtime', 'los']]  # Return relevant columns
 
 
 def merge_on_subject(table1, table2):
+    """Merge two tables on 'subject_id'.
 
-    return table1.merge(table2, how='inner', left_on=['subject_id'], right_on=['subject_id'])
+    Args:
+        table1 (pd.DataFrame): First DataFrame to merge.
+        table2 (pd.DataFrame): Second DataFrame to merge.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame based on 'subject_id'.
+    """
+    return table1.merge(table2, how='inner', left_on=['subject_id'], right_on=['subject_id'])  # Inner merge on 'subject_id'
 
 
 def merge_on_subject_admission(table1, table2):
+    """Merge two tables on 'subject_id' and 'hadm_id'.
 
-    return table1.merge(table2, how='inner', left_on=['subject_id', 'hadm_id'], right_on=['subject_id', 'hadm_id'])
+    Args:
+        table1 (pd.DataFrame): First DataFrame to merge.
+        table2 (pd.DataFrame): Second DataFrame to merge.
+
+    Returns:
+        pd.DataFrame: Merged DataFrame based on 'subject_id' and 'hadm_id'.
+    """
+    return table1.merge(table2, how='inner', left_on=['subject_id', 'hadm_id'], right_on=['subject_id', 'hadm_id'])  # Inner merge on 'subject_id' and 'hadm_id'
+
 
 def add_age_to_icustays(stays):
+    """Add patient age to ICU stays.
 
-    stays['age'] = stays.anchor_age 
-    # (stays.intime - stays.DOB).apply(lambda s: s / np.timedelta64(1, 's')) / 60./60/24/365
-    stays.loc[stays.age < 0, 'age'] = 90
-    return stays
+    Args:
+        stays (pd.DataFrame): DataFrame containing ICU stays data.
 
+    Returns:
+        pd.DataFrame: Updated DataFrame with an added 'age' column. If age is negative, it is set to 90.
+    """
+    stays['age'] = stays.anchor_age  # Assign 'anchor_age' to the new 'age' column
+    stays.loc[stays.age < 0, 'age'] = 90  # Set negative ages to 90 (age estimation for patients > 89 years)
+    return stays  # Return the updated DataFrame
 
+# ----------------------------------------------
 def add_inhospital_mortality_to_icustays(stays):
 
     mortality = stays.dod.notnull() & ((stays.admittime <= stays.dod) & (stays.dischtime >= stays.dod))
