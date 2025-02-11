@@ -56,7 +56,7 @@ If you find MedMod useful for your research and applications, please cite using 
 ```bibtex
 @misc{author2024medmod,
     title={MedMod: A Multimodal Benchmark for Clinical Prediction Tasks with Electronic Health Records and Chest X-Ray Scans},
-    url={https://anonymous.4open.science/r/MedMod-9061/README.md},
+    url={https://anonymous.4open.science/r/MedMod-9061/},
     author={Authors},
     month={February},
     year={2025}
