@@ -54,11 +54,14 @@ Citation
 
 If you find MedMod useful for your research and applications, please cite using this BibTeX:
 ```bibtex
-@misc{author2024medmod,
-    title={MedMod: A Multimodal Benchmark for Clinical Prediction Tasks with Electronic Health Records and Chest X-Ray Scans},
-    url={https://anonymous.4open.science/r/MedMod-9061/},
-    author={Authors},
-    month={February},
-    year={2025}
+
+@article{elsharief2025medmod,
+  title={MedMod: Multimodal Benchmark for Medical Prediction Tasks with Electronic Health Records and Chest X-Ray Scans},
+  author={Elsharief, Shaza and Shurrab, Saeed and Al Jorf, Baraa and L{\'o}pez, L Juli{\'a}n Lechuga and Shamout, Farah E},
+  journal={Proceedings of Machine Learning Research},
+  volume={287},
+  pages={1--23},
+  year={2025},
+  publisher={ML Research Press}
 }
 ```
